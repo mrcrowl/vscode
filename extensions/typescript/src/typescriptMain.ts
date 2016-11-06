@@ -31,6 +31,7 @@ import DocumentSymbolProvider from './features/documentSymbolProvider';
 import SignatureHelpProvider from './features/signatureHelpProvider';
 import RenameProvider from './features/renameProvider';
 import FormattingProvider from './features/formattingProvider';
+import CompileOnSave from './features/compileOnSave';
 import BufferSyncSupport from './features/bufferSyncSupport';
 import CompletionItemProvider from './features/completionItemProvider';
 import WorkspaceSymbolProvider from './features/workspaceSymbolProvider';
@@ -80,11 +81,15 @@ export function activate(context: ExtensionContext): void {
 		clientHost.reloadProjects();
 	}));
 
+	let compileOnSave = new CompileOnSave(client, [MODE_ID_TS, MODE_ID_TSX]);
 	window.onDidChangeActiveTextEditor(VersionStatus.showHideStatus, null, context.subscriptions);
 	client.onReady().then(() => {
 		context.subscriptions.push(ProjectStatus.create(client,
 			path => new Promise(resolve => setTimeout(() => resolve(clientHost.handles(path)), 750)),
 			context.workspaceState));
+
+		context.subscriptions.push(workspace.onWillSaveTextDocument(e => compileOnSave.willSaveTextDocument(e.document)));
+		context.subscriptions.push(workspace.onDidSaveTextDocument(document => compileOnSave.didSaveTextDocument(document)));
 	}, () => {
 		// Nothing to do here. The client did show a message;
 	});
