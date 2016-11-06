@@ -7,7 +7,7 @@
 
 import { TextDocument, Disposable, TextDocumentWillSaveEvent, window, workspace } from 'vscode';
 
-import * as fs from 'fs';
+// import * as fs from 'fs';
 import * as Proto from '../protocol';
 import { ITypescriptServiceClient } from '../typescriptService';
 
@@ -89,7 +89,7 @@ export default class TypeScriptCompileOnSaveSupport {
 		if (batch) {
 			let { first } = batch.notifyDocumentDidSave(document);
 			if (first) {
-				batch.compileMessage = window.setStatusBarMessage("$(zap) Compiling ts");
+				batch.compileMessage = window.setStatusBarMessage(`$(zap) Compiling ts`);
 			}
 			this.pruneBatchIfComplete(batch);
 		}
@@ -102,7 +102,7 @@ export default class TypeScriptCompileOnSaveSupport {
 
 		this.client.execute('compileOnSaveAffectedFileList', affectedFileArgs).then(response => {
 			const { body } = response;
-			if (body.length == 0) {
+			if (body.length === 0) {
 				if (batch.compileMessage) {
 					batch.compileMessage.dispose();
 					batch.compileMessage = null;
@@ -139,7 +139,7 @@ export default class TypeScriptCompileOnSaveSupport {
 							batch.notifyEmitComplete(file);
 						}
 					}, reason => {
-						console.error("Emit failed: " + file.filename);
+						console.error(`Emit failed: ${file.filename}`);
 						if (batch) {
 							batch.notifyEmitComplete(file);
 						}
@@ -290,7 +290,7 @@ class CompileOnSaveMultipleFileBatcher {
 			this.allPendingSavesCompleted = true;
 		}
 
-		return { first }
+		return { first };
 	}
 
 	public provideAffectedFiles(affectedFiles: AffectedFile[]) {
@@ -352,7 +352,7 @@ class CompileOnSaveMultipleFileBatcher {
 	}
 
 	public get emitComplete(): boolean {
-		return this.affectedFilesRemainingEmitCount == 0;
+		return this.affectedFilesRemainingEmitCount === 0;
 	}
 
 	/** Elapsed time since this batch was created */
@@ -368,7 +368,7 @@ class CompileOnSaveMultipleFileBatcher {
 interface AffectedFile {
 	key: string;
 	projectFileName: string;
-	filename: string
+	filename: string;
 }
 
 interface AffectedFileStatus {
@@ -376,4 +376,4 @@ interface AffectedFileStatus {
 	emmitted: boolean;
 }
 
-const hashAffectedFile = (filename: string, projectFileName: string): string => `${projectFileName || ""}|${filename}`;
+const hashAffectedFile = (filename: string, projectFileName: string): string => `${projectFileName || ''}|${filename}`;
