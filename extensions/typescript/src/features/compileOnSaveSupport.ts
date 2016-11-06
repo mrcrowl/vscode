@@ -5,8 +5,9 @@
 
 'use strict';
 
-import { TextDocument } from 'vscode';
+import { TextDocument, Disposable, TextDocumentWillSaveEvent, workspace } from 'vscode';
 
+import * as fs from 'fs';
 import * as Proto from '../protocol';
 import { ITypescriptServiceClient } from '../typescriptService';
 
@@ -16,10 +17,13 @@ let nextBatchId: number = 0;
 const BATCH_ISOLATION_TIME = 2000;
 const BATCH_EXPIRY_TIME = 15000;
 
-export default class TypeScriptCompileOnSave {
+export default class TypeScriptCompileOnSaveSupport {
 	private client: ITypescriptServiceClient;
 	private modeIds: Map<boolean>;
+	private disposables: Disposable[] = [];
 	private activeBatches: CompileOnSaveMultipleFileBatcher[];
+	private enabledPerFile: Map<boolean>;
+	private enabledPerConfig: Map<boolean>;
 
 	public tokens: string[] = [];
 
@@ -28,36 +32,106 @@ export default class TypeScriptCompileOnSave {
 		this.modeIds = Object.create(null);
 		this.activeBatches = [];
 		modeIds.forEach(modeId => this.modeIds[modeId] = true);
+		this.clearCachedEnabledStatuses();
 	}
 
-	public willSaveTextDocument(document: TextDocument) {
-		if (!document || !(document.languageId in this.modeIds)) {
+	public listen() {
+		workspace.onWillSaveTextDocument(this.onWillSaveTextDocument, this, this.disposables);
+		workspace.onDidSaveTextDocument(this.onDidSaveTextDocument, this, this.disposables);
+	}
+
+	public dispose(): void {
+		while (this.disposables.length) {
+			this.disposables.pop().dispose();
+		}
+	}
+
+	public clearCachedEnabledStatuses() {
+		this.enabledPerFile = Object.create(null);
+		this.enabledPerConfig = Object.create(null);
+	}
+
+	private isDisabledForFile(file: string): boolean {
+		return this.enabledPerFile[file] === false;
+	}
+
+	private getEnabledStatusForFile(file: string): Promise<boolean> {
+		if (file in this.enabledPerFile) {
+			let enabled = this.enabledPerFile[file];
+			return Promise.resolve(enabled);
+		}
+		else {
+			let projectInfo = this.client.execute('projectInfo', { file: file, needFileNameList: false });
+			projectInfo.then(response => {
+				let configFileName = response.body.configFileName;
+				if (configFileName) {
+					if (configFileName in this.enabledPerConfig) {
+						let enabled = this.enabledPerConfig[configFileName];
+						this.enabledPerFile[file] = enabled;
+						return enabled;
+					}
+
+					let enabled = this.readConfigFileCompileOnSaveOption(configFileName);
+					if (enabled !== undefined) {
+						this.enabledPerFile[file] = enabled;
+						this.enabledPerConfig[configFileName] = enabled;
+						return enabled;
+					}
+				}
+				return false;
+			}, () => false);
+		}
+	}
+
+	private readConfigFileCompileOnSaveOption(configFileName: string): boolean | undefined {
+		try {
+			let tsconfig = JSON.parse(fs.readFileSync(configFileName, 'utf8'));
+			return tsconfig.compileOnSave || false;
+		}
+		catch (e) {
+			return undefined;
+		}
+	}
+
+	public onWillSaveTextDocument(e: TextDocumentWillSaveEvent) {
+		let {document} = e;
+		if (!document ||
+			!(document.languageId in this.modeIds) ||
+			this.isDisabledForFile(document.fileName)) {
 			return;
 		}
 
-		console.log(`Will save: ${document.fileName}`);
-
-		let openBatch: CompileOnSaveMultipleFileBatcher;
-		for (let activeBatch of this.activeBatches) {
-			if (activeBatch.open && !activeBatch.expired) {
-				openBatch = activeBatch;
-				break;
+		let enabledChecked: Thenable<void> = this.getEnabledStatusForFile(document.fileName).then(enabled => {
+			if (!enabled) {
+				return;
 			}
-		}
 
-		if (!openBatch) {
-			let newBatch = new CompileOnSaveMultipleFileBatcher(nextBatchId++);
-			this.activeBatches.push(newBatch);
-			openBatch = newBatch;
-		}
+			let openBatch: CompileOnSaveMultipleFileBatcher;
+			for (let activeBatch of this.activeBatches) {
+				if (activeBatch.open && !activeBatch.expired) {
+					openBatch = activeBatch;
+					break;
+				}
+			}
 
-		openBatch.addPendingSave(document);
+			if (!openBatch) {
+				let newBatch = new CompileOnSaveMultipleFileBatcher(nextBatchId++);
+				this.activeBatches.push(newBatch);
+				openBatch = newBatch;
+			}
+
+			openBatch.addPendingSave(document);
+			console.log(`Will save: ${document.fileName}`);
+		});
+		e.waitUntil(enabledChecked);
 	}
 
-	public didSaveTextDocument(document: TextDocument) {
-		console.log(`Did save: ${document.fileName}`);
+	public onDidSaveTextDocument(document: TextDocument) {
+		// console.log(`Did save: ${document.fileName}`);
 
-		if (!document || !(document.languageId in this.modeIds)) {
+		if (!document ||
+			!(document.languageId in this.modeIds) ||
+			this.isDisabledForFile(document.fileName)) {
 			return;
 		}
 

@@ -31,7 +31,7 @@ import DocumentSymbolProvider from './features/documentSymbolProvider';
 import SignatureHelpProvider from './features/signatureHelpProvider';
 import RenameProvider from './features/renameProvider';
 import FormattingProvider from './features/formattingProvider';
-import CompileOnSave from './features/compileOnSave';
+import CompileOnSaveSupport from './features/compileOnSaveSupport';
 import BufferSyncSupport from './features/bufferSyncSupport';
 import CompletionItemProvider from './features/completionItemProvider';
 import WorkspaceSymbolProvider from './features/workspaceSymbolProvider';
@@ -46,6 +46,7 @@ interface LanguageDescription {
 	modeIds: string[];
 	extensions: string[];
 	configFile: string;
+	supportsCompileOnSave: boolean;
 }
 
 export function activate(context: ExtensionContext): void {
@@ -60,14 +61,16 @@ export function activate(context: ExtensionContext): void {
 			diagnosticSource: 'ts',
 			modeIds: [MODE_ID_TS, MODE_ID_TSX],
 			extensions: ['.ts', '.tsx'],
-			configFile: 'tsconfig.json'
+			configFile: 'tsconfig.json',
+			supportsCompileOnSave: true
 		},
 		{
 			id: 'javascript',
 			diagnosticSource: 'js',
 			modeIds: [MODE_ID_JS, MODE_ID_JSX],
 			extensions: ['.js', '.jsx'],
-			configFile: 'jsconfig.json'
+			configFile: 'jsconfig.json',
+			supportsCompileOnSave: false
 		}
 	], context.storagePath, context.globalState);
 
@@ -81,15 +84,11 @@ export function activate(context: ExtensionContext): void {
 		clientHost.reloadProjects();
 	}));
 
-	let compileOnSave = new CompileOnSave(client, [MODE_ID_TS, MODE_ID_TSX]);
 	window.onDidChangeActiveTextEditor(VersionStatus.showHideStatus, null, context.subscriptions);
 	client.onReady().then(() => {
 		context.subscriptions.push(ProjectStatus.create(client,
 			path => new Promise(resolve => setTimeout(() => resolve(clientHost.handles(path)), 750)),
 			context.workspaceState));
-
-		context.subscriptions.push(workspace.onWillSaveTextDocument(e => compileOnSave.willSaveTextDocument(e.document)));
-		context.subscriptions.push(workspace.onDidSaveTextDocument(document => compileOnSave.didSaveTextDocument(document)));
 	}, () => {
 		// Nothing to do here. The client did show a message;
 	});
@@ -109,6 +108,7 @@ class LanguageProvider {
 	private completionItemProvider: CompletionItemProvider;
 	private formattingProvider: FormattingProvider;
 	private formattingProviderRegistration: Disposable;
+	private compileOnSaveSupport: CompileOnSaveSupport;
 
 	private _validate: boolean;
 
@@ -126,6 +126,9 @@ class LanguageProvider {
 		this.syntaxDiagnostics = Object.create(null);
 		this.currentDiagnostics = languages.createDiagnosticCollection(description.id);
 
+		if (description.supportsCompileOnSave) {
+			this.compileOnSaveSupport = new CompileOnSaveSupport(client, description.modeIds);
+		}
 
 		workspace.onDidChangeConfiguration(this.configurationChanged, this);
 		this.configurationChanged();
@@ -133,6 +136,10 @@ class LanguageProvider {
 		client.onReady().then(() => {
 			this.registerProviders(client);
 			this.bufferSyncSupport.listen();
+
+			if (this.compileOnSaveSupport) {
+				this.compileOnSaveSupport.listen();
+			}
 		}, () => {
 			// Nothing to do here. The client did show a message;
 		});
@@ -263,10 +270,16 @@ class LanguageProvider {
 		this.syntaxDiagnostics = Object.create(null);
 		this.bufferSyncSupport.reOpenDocuments();
 		this.bufferSyncSupport.requestAllDiagnostics();
+		if (this.compileOnSaveSupport) {
+			this.compileOnSaveSupport.clearCachedEnabledStatuses();
+		}
 	}
 
 	public triggerAllDiagnostics(): void {
 		this.bufferSyncSupport.requestAllDiagnostics();
+		if (this.compileOnSaveSupport) {
+			this.compileOnSaveSupport.clearCachedEnabledStatuses();
+		}
 	}
 
 	public syntaxDiagnosticsReceived(file: string, diagnostics: Diagnostic[]): void {
