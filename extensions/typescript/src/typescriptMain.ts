@@ -270,16 +270,16 @@ class LanguageProvider {
 		this.syntaxDiagnostics = Object.create(null);
 		this.bufferSyncSupport.reOpenDocuments();
 		this.bufferSyncSupport.requestAllDiagnostics();
-		if (this.compileOnSaveSupport) {
-			this.compileOnSaveSupport.clearCachedEnabledStatuses();
-		}
+		// if (this.compileOnSaveSupport) {
+		// 	this.compileOnSaveSupport.clearCachedEnabledStatuses();
+		// }
 	}
 
 	public triggerAllDiagnostics(): void {
 		this.bufferSyncSupport.requestAllDiagnostics();
-		if (this.compileOnSaveSupport) {
-			this.compileOnSaveSupport.clearCachedEnabledStatuses();
-		}
+		// if (this.compileOnSaveSupport) {
+		// 	this.compileOnSaveSupport.clearCachedEnabledStatuses();
+		// }
 	}
 
 	public syntaxDiagnosticsReceived(file: string, diagnostics: Diagnostic[]): void {
