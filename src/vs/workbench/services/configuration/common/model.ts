@@ -7,24 +7,21 @@
 import objects = require('vs/base/common/objects');
 import types = require('vs/base/common/types');
 import json = require('vs/base/common/json');
-import model = require('vs/platform/configuration/common/model');
+import { toValuesTree } from 'vs/platform/configuration/common/model';
 import { CONFIG_DEFAULT_NAME, WORKSPACE_CONFIG_DEFAULT_PATH } from 'vs/workbench/services/configuration/common/configuration';
 
 export interface IConfigFile {
 	contents: any;
+	raw?: any;
 	parseError?: any;
 }
 
 export function newConfigFile(value: string): IConfigFile {
 	try {
-		const root: any = Object.create(null);
 		const contents = json.parse(value) || {};
-		for (let key in contents) {
-			model.setNode(root, key, contents[key]);
-		}
-
 		return {
-			contents: root
+			contents: toValuesTree(contents),
+			raw: contents
 		};
 	} catch (e) {
 		return {

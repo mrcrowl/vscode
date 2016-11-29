@@ -9,23 +9,21 @@ import * as assert from 'assert';
 import { IAction, IActionItem } from 'vs/base/common/actions';
 import { Promise, TPromise } from 'vs/base/common/winjs.base';
 import paths = require('vs/base/common/paths');
-import { IEditorControl } from 'vs/platform/editor/common/editor';
+import { IEditorControl, Position, Direction, IEditor } from 'vs/platform/editor/common/editor';
 import URI from 'vs/base/common/uri';
 import { BaseEditor } from 'vs/workbench/browser/parts/editor/baseEditor';
 import { EditorInput, EditorOptions, TextEditorOptions } from 'vs/workbench/common/editor';
 import { StringEditorInput } from 'vs/workbench/common/editor/stringEditorInput';
 import { StringEditorModel } from 'vs/workbench/common/editor/stringEditorModel';
 import { FileEditorInput } from 'vs/workbench/parts/files/common/editors/fileEditorInput';
-import { TextFileEditorModel } from 'vs/workbench/services/textfile/common/textFileEditorModel';
 import { workbenchInstantiationService } from 'vs/test/utils/servicesTestUtils';
-import { Viewlet } from 'vs/workbench/browser/viewlet';
+import { Viewlet, ViewletDescriptor } from 'vs/workbench/browser/viewlet';
 import { IPanel } from 'vs/workbench/common/panel';
 import { WorkbenchProgressService, ScopedService } from 'vs/workbench/services/progress/browser/progressService';
 import { DelegatingWorkbenchEditorService, WorkbenchEditorService, IEditorPart } from 'vs/workbench/services/editor/browser/editorService';
-import { IViewletService } from 'vs/workbench/services/viewlet/common/viewletService';
+import { IViewletService } from 'vs/workbench/services/viewlet/browser/viewlet';
 import { IPanelService } from 'vs/workbench/services/panel/common/panelService';
 import { IViewlet } from 'vs/workbench/common/viewlet';
-import { Position, Direction, IEditor } from 'vs/platform/editor/common/editor';
 import { Emitter } from 'vs/base/common/event';
 
 let activeViewlet: Viewlet = <any>{};
@@ -101,13 +99,17 @@ class TestViewletService implements IViewletService {
 	public _serviceBrand: any;
 
 	onDidViewletOpenEmitter = new Emitter<IViewlet>();
-	onDidViewletOpen = this.onDidViewletOpenEmitter.event;
-
 	onDidViewletCloseEmitter = new Emitter<IViewlet>();
+
+	onDidViewletOpen = this.onDidViewletOpenEmitter.event;
 	onDidViewletClose = this.onDidViewletCloseEmitter.event;
 
-	public openViewlet(id: string, focus?: boolean): Promise {
+	public openViewlet(id: string, focus?: boolean): TPromise<IViewlet> {
 		return TPromise.as(null);
+	}
+
+	public getViewlets(): ViewletDescriptor[] {
+		return [];
 	}
 
 	public getActiveViewlet(): IViewlet {
@@ -116,7 +118,6 @@ class TestViewletService implements IViewletService {
 
 	public dispose() {
 	}
-
 }
 
 class TestPanelService implements IPanelService {
@@ -313,21 +314,16 @@ suite('Workbench UI Services', () => {
 
 		// Resolve Editor Model (Typed EditorInput)
 		let input = instantiationService.createInstance(StringEditorInput, 'name', 'description', 'hello world', 'text/plain', false);
-		service.resolveEditorModel(input, true).then((model: StringEditorModel) => {
+		input.resolve(true).then((model: StringEditorModel) => {
 			assert(model instanceof StringEditorModel);
 
 			assert(model.isResolved());
 
-			service.resolveEditorModel(input, false).then((otherModel) => {
+			input.resolve().then((otherModel) => {
 				assert(model === otherModel);
 
 				input.dispose();
 			});
-		});
-
-		// Resolve Editor Model (Untyped Input)
-		service.resolveEditorModel({ resource: toResource.call(this, '/index.html') }, true).then((model) => {
-			assert(model instanceof TextFileEditorModel);
 		});
 	});
 

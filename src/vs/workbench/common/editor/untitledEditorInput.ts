@@ -28,10 +28,11 @@ export class UntitledEditorInput extends AbstractUntitledEditorInput {
 	public static SCHEMA: string = 'untitled';
 
 	private resource: URI;
-	private hasAssociatedFilePath: boolean;
+	private _hasAssociatedFilePath: boolean;
 	private modeId: string;
 	private cachedModel: UntitledEditorModel;
 
+	private _onDidModelChangeContent: Emitter<void>;
 	private _onDidModelChangeEncoding: Emitter<void>;
 
 	private toUnbind: IDisposable[];
@@ -48,10 +49,19 @@ export class UntitledEditorInput extends AbstractUntitledEditorInput {
 		super();
 
 		this.resource = resource;
-		this.hasAssociatedFilePath = hasAssociatedFilePath;
+		this._hasAssociatedFilePath = hasAssociatedFilePath;
 		this.modeId = modeId;
 		this.toUnbind = [];
+		this._onDidModelChangeContent = new Emitter<void>();
 		this._onDidModelChangeEncoding = new Emitter<void>();
+	}
+
+	public get hasAssociatedFilePath(): boolean {
+		return this._hasAssociatedFilePath;
+	}
+
+	public get onDidModelChangeContent(): Event<void> {
+		return this._onDidModelChangeContent.event;
 	}
 
 	public get onDidModelChangeEncoding(): Event<void> {
@@ -79,7 +89,13 @@ export class UntitledEditorInput extends AbstractUntitledEditorInput {
 			return this.cachedModel.isDirty();
 		}
 
-		return this.hasAssociatedFilePath; // untitled files with associated path are always dirty
+		// A disposed input is never dirty, even if it was restored from backup
+		if (this.isDisposed()) {
+			return false;
+		}
+
+		// untitled files with an associated path or associated resource
+		return this.hasAssociatedFilePath;
 	}
 
 	public confirmSave(): ConfirmResult {
@@ -135,19 +151,16 @@ export class UntitledEditorInput extends AbstractUntitledEditorInput {
 		}
 
 		// Otherwise Create Model and load
-		const model = this.createModel();
-		return model.load().then((resolvedModel: UntitledEditorModel) => {
-			this.cachedModel = resolvedModel;
+		this.cachedModel = this.createModel();
 
-			return this.cachedModel;
-		});
+		return this.cachedModel.load();
 	}
 
 	private createModel(): UntitledEditorModel {
-		const content = '';
-		const model = this.instantiationService.createInstance(UntitledEditorModel, content, this.modeId, this.resource, this.hasAssociatedFilePath);
+		const model = this.instantiationService.createInstance(UntitledEditorModel, this.modeId, this.resource, this.hasAssociatedFilePath);
 
 		// re-emit some events from the model
+		this.toUnbind.push(model.onDidChangeContent(() => this._onDidModelChangeContent.fire()));
 		this.toUnbind.push(model.onDidChangeDirty(() => this._onDidChangeDirty.fire()));
 		this.toUnbind.push(model.onDidChangeEncoding(() => this._onDidModelChangeEncoding.fire()));
 
@@ -170,6 +183,7 @@ export class UntitledEditorInput extends AbstractUntitledEditorInput {
 	}
 
 	public dispose(): void {
+		this._onDidModelChangeContent.dispose();
 		this._onDidModelChangeEncoding.dispose();
 
 		// Listeners

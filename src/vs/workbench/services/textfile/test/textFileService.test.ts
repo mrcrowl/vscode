@@ -6,7 +6,7 @@
 
 import { TPromise } from 'vs/base/common/winjs.base';
 import * as assert from 'assert';
-import { ILifecycleService, ShutdownEvent } from 'vs/platform/lifecycle/common/lifecycle';
+import { ILifecycleService, ShutdownEvent, ShutdownReason } from 'vs/platform/lifecycle/common/lifecycle';
 import { workbenchInstantiationService, TestLifecycleService, TestTextFileService, onError, toResource } from 'vs/test/utils/servicesTestUtils';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { TextFileEditorModel } from 'vs/workbench/services/textfile/common/textFileEditorModel';
@@ -28,6 +28,7 @@ class ServiceAccessor {
 class ShutdownEventImpl implements ShutdownEvent {
 
 	public value: boolean | TPromise<boolean>;
+	public reason = ShutdownReason.CLOSE;
 
 	veto(value: boolean | TPromise<boolean>): void {
 		this.value = value;
@@ -59,7 +60,14 @@ suite('Files - TextFileService', () => {
 		const event = new ShutdownEventImpl();
 		accessor.lifecycleService.fireWillShutdown(event);
 
-		assert.ok(!event.value);
+		const veto = event.value;
+		if (typeof veto === 'boolean') {
+			assert.ok(!veto);
+		} else {
+			veto.then(veto => {
+				assert.ok(!veto);
+			});
+		}
 	});
 
 	test('confirm onWillShutdown - veto if user cancels', function (done) {
@@ -98,9 +106,18 @@ suite('Files - TextFileService', () => {
 			const event = new ShutdownEventImpl();
 			accessor.lifecycleService.fireWillShutdown(event);
 
-			assert.ok(!event.value);
+			const veto = event.value;
+			if (typeof veto === 'boolean') {
+				assert.ok(!veto);
 
-			done();
+				done();
+			} else {
+				veto.then(veto => {
+					assert.ok(!veto);
+
+					done();
+				});
+			}
 		}, error => onError(error, done));
 	});
 

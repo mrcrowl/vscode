@@ -18,16 +18,19 @@ import { StorageService, InMemoryLocalStorage } from 'vs/workbench/services/stor
 import { IEditorGroup, ConfirmResult } from 'vs/workbench/common/editor';
 import Event, { Emitter } from 'vs/base/common/event';
 import Severity from 'vs/base/common/severity';
+import { IBackupService, IBackupFileService, IBackupResult } from 'vs/workbench/services/backup/common/backup';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { IStorageService, StorageScope } from 'vs/platform/storage/common/storage';
 import { IQuickOpenService } from 'vs/workbench/services/quickopen/common/quickOpenService';
 import { IPartService } from 'vs/workbench/services/part/common/partService';
-import { IEditorInput, IEditorOptions, IEditorModel, Position, Direction, IEditor, IResourceInput, ITextEditorModel } from 'vs/platform/editor/common/editor';
+import { TextModelResolverService } from 'vs/workbench/services/textmodelResolver/common/textModelResolverService';
+import { ITextModelResolverService } from 'vs/editor/common/services/resolverService';
+import { IEditorInput, IEditorOptions, Position, Direction, IEditor, IResourceInput } from 'vs/platform/editor/common/editor';
 import { IEventService } from 'vs/platform/event/common/event';
 import { IUntitledEditorService, UntitledEditorService } from 'vs/workbench/services/untitled/common/untitledEditorService';
 import { IMessageService, IConfirmation } from 'vs/platform/message/common/message';
 import { IWorkspace, IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
-import { ILifecycleService, ShutdownEvent } from 'vs/platform/lifecycle/common/lifecycle';
+import { ILifecycleService, ShutdownEvent, ShutdownReason } from 'vs/platform/lifecycle/common/lifecycle';
 import { EditorStacksModel } from 'vs/workbench/common/editor/editorStacksModel';
 import { ServiceCollection } from 'vs/platform/instantiation/common/serviceCollection';
 import { InstantiationService } from 'vs/platform/instantiation/common/instantiationService';
@@ -112,9 +115,11 @@ export class TestTextFileService extends TextFileService {
 		@IEditorGroupService editorGroupService: IEditorGroupService,
 		@IFileService fileService: IFileService,
 		@IUntitledEditorService untitledEditorService: IUntitledEditorService,
-		@IInstantiationService instantiationService: IInstantiationService
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IBackupService backupService: IBackupService,
+		@IMessageService messageService: IMessageService
 	) {
-		super(lifecycleService, contextService, configurationService, telemetryService, editorGroupService, editorService, fileService, untitledEditorService, instantiationService);
+		super(lifecycleService, contextService, configurationService, telemetryService, editorGroupService, fileService, untitledEditorService, instantiationService, backupService, messageService);
 	}
 
 	public setPromptPath(path: string): void {
@@ -175,10 +180,13 @@ export function workbenchInstantiationService(): IInstantiationService {
 	instantiationService.stub(IHistoryService, 'getHistory', []);
 	instantiationService.stub(IModelService, createMockModelService(instantiationService));
 	instantiationService.stub(IFileService, TestFileService);
+	instantiationService.stub(IBackupFileService, new TestBackupFileService());
+	instantiationService.stub(IBackupService, new TestBackupService());
 	instantiationService.stub(ITelemetryService, NullTelemetryService);
 	instantiationService.stub(IMessageService, new TestMessageService());
 	instantiationService.stub(IUntitledEditorService, instantiationService.createInstance(UntitledEditorService));
 	instantiationService.stub(ITextFileService, <ITextFileService>instantiationService.createInstance(TestTextFileService));
+	instantiationService.stub(ITextModelResolverService, <ITextModelResolverService>instantiationService.createInstance(TextModelResolverService));
 
 	return instantiationService;
 }
@@ -214,6 +222,12 @@ export class TestMessageService implements IMessageService {
 export class TestPartService implements IPartService {
 	public _serviceBrand: any;
 
+	private _onTitleBarVisibilityChange = new Emitter<void>();
+
+	public get onTitleBarVisibilityChange(): Event<void> {
+		return this._onTitleBarVisibilityChange.event;
+	}
+
 	public layout(): void { }
 
 	public isCreated(): boolean {
@@ -236,9 +250,23 @@ export class TestPartService implements IPartService {
 		return null;
 	}
 
+	public isTitleBarHidden(): boolean {
+		return false;
+	}
+
+	public getTitleBarOffset(): number {
+		return 0;
+	}
+
 	public isStatusBarHidden(): boolean {
 		return false;
 	}
+
+	public isActivityBarHidden(): boolean {
+		return false;
+	}
+
+	public setActivityBarHidden(hidden: boolean): void { }
 
 	public isSideBarHidden(): boolean {
 		return false;
@@ -262,9 +290,7 @@ export class TestPartService implements IPartService {
 	public removeClass(clazz: string): void { }
 	public getWorkbenchElementId(): string { return ''; }
 
-	public setRestoreSidebar(): void {
-
-	}
+	public toggleZenMode(): void { }
 }
 
 export class TestEventService extends EventEmitter implements IEventService {
@@ -331,6 +357,7 @@ export class TestEditorGroupService implements IEditorGroupService {
 		services.set(IWorkspaceContextService, new TestContextService());
 		const lifecycle = new TestLifecycleService();
 		services.set(ILifecycleService, lifecycle);
+		services.set(ITelemetryService, NullTelemetryService);
 
 		let inst = new InstantiationService(services);
 
@@ -468,14 +495,6 @@ export class TestEditorService implements IWorkbenchEditorService {
 		return TPromise.as(null);
 	}
 
-	public resolveEditorModel(input: IEditorInput, refresh?: boolean): TPromise<IEditorModel>;
-	public resolveEditorModel(input: IResourceInput, refresh?: boolean): TPromise<ITextEditorModel>;
-	public resolveEditorModel(input: any, refresh?: boolean): Promise {
-		this.callback('resolveEditorModel');
-
-		return input.resolve(refresh);
-	}
-
 	public closeEditor(position: Position, input: IEditorInput): TPromise<void> {
 		this.callback('closeEditor');
 
@@ -585,6 +604,89 @@ export const TestFileService = {
 				name: paths.basename(res.fsPath)
 			};
 		});
+	},
+
+	backupFile: function (resource: URI, content: string) {
+		return TPromise.as(void 0);
+	},
+
+	discardBackup: function (resource: URI) {
+		return TPromise.as(void 0);
+	},
+
+	discardBackups: function () {
+		return TPromise.as(void 0);
+	},
+
+	isHotExitEnabled: function () {
+		return false;
+	}
+};
+
+export class TestBackupService implements IBackupService {
+	public _serviceBrand: any;
+
+	public isHotExitEnabled: boolean = false;
+
+	public backupBeforeShutdown(): TPromise<IBackupResult> {
+		return TPromise.as({ didBackup: false });
+	}
+
+	public cleanupBackupsBeforeShutdown(): TPromise<void> {
+		return TPromise.as(null);
+	}
+
+	public doBackup(resource: URI, content: string, immediate?: boolean): TPromise<void> {
+		return TPromise.as(void 0);
+	}
+}
+
+export class TestBackupFileService implements IBackupFileService {
+	public _serviceBrand: any;
+	public hasBackup(resource: URI): TPromise<boolean> {
+		return TPromise.as(false);
+	}
+
+	public loadBackupResource(resource: URI): TPromise<URI> {
+		return this.hasBackup(resource).then(hasBackup => {
+			if (hasBackup) {
+				return this.getBackupResource(resource);
+			}
+
+			return void 0;
+		});
+	}
+
+	public registerResourceForBackup(resource: URI): TPromise<void> {
+		return TPromise.as(void 0);
+	}
+
+	public deregisterResourceForBackup(resource: URI): TPromise<void> {
+		return TPromise.as(void 0);
+	}
+
+	public getBackupResource(resource: URI): URI {
+		return null;
+	}
+
+	public backupResource(resource: URI, content: string): TPromise<void> {
+		return TPromise.as(void 0);
+	}
+
+	public getWorkspaceFileBackups(): TPromise<URI[]> {
+		return TPromise.as([]);
+	}
+
+	public parseBackupContent(rawText: IRawTextContent): string {
+		return rawText.value.lines.join('\n');
+	}
+
+	public discardResourceBackup(resource: URI): TPromise<void> {
+		return TPromise.as(void 0);
+	}
+
+	public discardAllWorkspaceBackups(): TPromise<void> {
+		return TPromise.as(void 0);
 	}
 };
 
@@ -595,13 +697,13 @@ export class TestLifecycleService implements ILifecycleService {
 	public willShutdown: boolean;
 
 	private _onWillShutdown = new Emitter<ShutdownEvent>();
-	private _onShutdown = new Emitter<void>();
+	private _onShutdown = new Emitter<ShutdownReason>();
 
 	constructor() {
 	}
 
-	public fireShutdown(): void {
-		this._onShutdown.fire();
+	public fireShutdown(reason = ShutdownReason.QUIT): void {
+		this._onShutdown.fire(reason);
 	}
 
 	public fireWillShutdown(event: ShutdownEvent): void {
@@ -612,7 +714,7 @@ export class TestLifecycleService implements ILifecycleService {
 		return this._onWillShutdown.event;
 	}
 
-	public get onShutdown(): Event<void> {
+	public get onShutdown(): Event<ShutdownReason> {
 		return this._onShutdown.event;
 	}
 }

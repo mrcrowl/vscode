@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 'use strict';
 
-import { onUnexpectedError } from 'vs/base/common/errors';
 import { toErrorMessage } from 'vs/base/common/errorMessage';
 import { EmitterEvent } from 'vs/base/common/eventEmitter';
 import { IModelService } from 'vs/editor/common/services/modelService';
@@ -13,19 +12,23 @@ import { IThreadService } from 'vs/workbench/services/thread/common/threadServic
 import URI from 'vs/base/common/uri';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import { IEventService } from 'vs/platform/event/common/event';
+import { getResource } from 'vs/workbench/common/editor';
 import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { TextFileModelChangeEvent, ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
 import { TPromise } from 'vs/base/common/winjs.base';
 import { IFileService } from 'vs/platform/files/common/files';
 import { IModeService } from 'vs/editor/common/services/modeService';
 import { IUntitledEditorService } from 'vs/workbench/services/untitled/common/untitledEditorService';
-import { ResourceEditorInput } from 'vs/workbench/common/editor/resourceEditorInput';
 import { ExtHostContext, MainThreadDocumentsShape, ExtHostDocumentsShape } from './extHost.protocol';
+import { ITextModelResolverService } from 'vs/editor/common/services/resolverService';
+import { ICodeEditorService } from 'vs/editor/common/services/codeEditorService';
 
 export class MainThreadDocuments extends MainThreadDocumentsShape {
 	private _modelService: IModelService;
 	private _modeService: IModeService;
+	private _textModelResolverService: ITextModelResolverService;
 	private _textFileService: ITextFileService;
+	private _codeEditorService: ICodeEditorService;
 	private _editorService: IWorkbenchEditorService;
 	private _fileService: IFileService;
 	private _untitledEditorService: IUntitledEditorService;
@@ -42,14 +45,18 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 		@IModeService modeService: IModeService,
 		@IEventService eventService: IEventService,
 		@ITextFileService textFileService: ITextFileService,
+		@ICodeEditorService codeEditorService: ICodeEditorService,
 		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
+		@ITextModelResolverService textModelResolverService: ITextModelResolverService,
 		@IUntitledEditorService untitledEditorService: IUntitledEditorService
 	) {
 		super();
 		this._modelService = modelService;
 		this._modeService = modeService;
+		this._textModelResolverService = textModelResolverService;
 		this._textFileService = textFileService;
+		this._codeEditorService = codeEditorService;
 		this._editorService = editorService;
 		this._fileService = fileService;
 		this._untitledEditorService = untitledEditorService;
@@ -184,8 +191,13 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 	}
 
 	private _handleAsResourceInput(uri: URI): TPromise<boolean> {
-		return this._editorService.resolveEditorModel({ resource: uri }).then(model => {
-			return !!model;
+		return this._textModelResolverService.createModelReference(uri).then(ref => {
+			const result = !!ref.object;
+
+			// TODO@Joao TODO@Joh when should this model reference be disposed?
+			// ref.dispose();
+
+			return result;
 		});
 	}
 
@@ -213,7 +225,7 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 	// --- virtual document logic
 
 	$registerTextContentProvider(handle: number, scheme: string): void {
-		this._resourceContentProvider[handle] = ResourceEditorInput.registerResourceContentProvider(scheme, {
+		this._resourceContentProvider[handle] = this._textModelResolverService.registerTextModelContentProvider(scheme, {
 			provideTextContent: (uri: URI): TPromise<editorCommon.IModel> => {
 				return this._proxy.$provideTextDocumentContent(handle, uri).then(value => {
 					if (typeof value === 'string') {
@@ -246,22 +258,32 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 
 		const toBeDisposed: URI[] = [];
 
-		TPromise.join(Object.keys(this._virtualDocumentSet).map(key => {
-			let resource = URI.parse(key);
-			return this._editorService.createInput({ resource }).then(input => {
-				if (!this._editorService.isVisible(input, true)) {
-					toBeDisposed.push(resource);
-				}
-
-				if (input) {
-					input.dispose();
-				}
-			});
-		})).then(() => {
-			for (let resource of toBeDisposed) {
-				this._modelService.destroyModel(resource);
-				delete this._virtualDocumentSet[resource.toString()];
+		// list of uris used in editors
+		const activeResources: { [uri: string]: boolean } = Object.create(null);
+		for (const editor of this._codeEditorService.listCodeEditors()) {
+			if (editor.getModel()) {
+				activeResources[editor.getModel().uri.toString()] = true;
 			}
-		}, onUnexpectedError);
+		}
+
+		for (const workbenchEditor of this._editorService.getVisibleEditors()) {
+			const uri = getResource(workbenchEditor.input);
+			if (uri) {
+				activeResources[uri.toString()] = true;
+			}
+		}
+
+		// intersect with virtual documents
+		for (let uri in this._virtualDocumentSet) {
+			if (!activeResources[uri]) {
+				toBeDisposed.push(URI.parse(uri));
+			}
+		}
+
+		// dispose unused virtual documents
+		for (let resource of toBeDisposed) {
+			this._modelService.destroyModel(resource);
+			delete this._virtualDocumentSet[resource.toString()];
+		}
 	}
 }

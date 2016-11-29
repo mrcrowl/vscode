@@ -10,15 +10,16 @@ import URI from 'vs/base/common/uri';
 import { TPromise } from 'vs/base/common/winjs.base';
 import { stat } from 'vs/base/node/pfs';
 import DOM = require('vs/base/browser/dom');
-import DND = require('vs/base/browser/dnd');
+import { extractResources } from 'vs/base/browser/dnd';
 import { Builder, $ } from 'vs/base/browser/builder';
 import { IPartService } from 'vs/workbench/services/part/common/partService';
 import { asFileEditorInput } from 'vs/workbench/common/editor';
 import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
 import { IWindowsService, IWindowService } from 'vs/platform/windows/common/windows';
+import { ITitleService } from 'vs/workbench/services/title/common/titleService';
 
-import { ipcRenderer as ipc, remote } from 'electron';
+import { remote } from 'electron';
 
 const dialog = remote.dialog;
 
@@ -33,10 +34,12 @@ export class ElectronWindow {
 		@IEditorGroupService private editorGroupService: IEditorGroupService,
 		@IPartService private partService: IPartService,
 		@IWindowsService private windowsService: IWindowsService,
-		@IWindowService private windowService: IWindowService
+		@IWindowService private windowService: IWindowService,
+		@ITitleService private titleService: ITitleService
 	) {
 		this.win = win;
 		this.windowId = win.id;
+
 		this.registerListeners();
 	}
 
@@ -48,7 +51,7 @@ export class ElectronWindow {
 				const fileInput = asFileEditorInput(this.editorService.getActiveEditorInput(), true);
 				const fileName = fileInput ? fileInput.getResource().fsPath : '';
 
-				this.windowService.setRepresentedFilename(fileName);
+				this.titleService.setRepresentedFilename(fileName);
 			});
 		}
 
@@ -69,7 +72,7 @@ export class ElectronWindow {
 			DOM.EventHelper.stop(e);
 
 			if (!draggedExternalResources) {
-				draggedExternalResources = DND.extractResources(e, true /* external only */);
+				draggedExternalResources = extractResources(e, true /* external only */).map(d => d.resource);
 
 				// Find out if folders are dragged and show the appropiate feedback then
 				this.includesFolder(draggedExternalResources).done(includesFolder => {
@@ -121,8 +124,7 @@ export class ElectronWindow {
 		// Handle window.open() calls
 		const $this = this;
 		(<any>window).open = function (url: string, target: string, features: string, replace: boolean) {
-			$this.openExternal(url);
-
+			$this.windowsService.openExternal(url);
 			return null;
 		};
 	}
@@ -137,11 +139,6 @@ export class ElectronWindow {
 		this.win.close();
 	}
 
-	public reload(): void {
-		this.partService.setRestoreSidebar(); // we want the same sidebar after a reload restored
-		ipc.send('vscode:reloadWindow', this.windowId);
-	}
-
 	public showMessageBox(options: Electron.ShowMessageBoxOptions): number {
 		return dialog.showMessageBox(this.win, options);
 	}
@@ -154,11 +151,7 @@ export class ElectronWindow {
 		return dialog.showSaveDialog(this.win, options); // https://github.com/electron/electron/issues/4936
 	}
 
-	focus(): TPromise<void> {
+	public focus(): TPromise<void> {
 		return this.windowService.focusWindow();
-	}
-
-	public openExternal(url: string): void {
-		ipc.send('vscode:openExternal', url); // handled from browser process to prevent foreground ordering issues on Windows
 	}
 }

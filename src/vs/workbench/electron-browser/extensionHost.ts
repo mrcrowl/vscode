@@ -28,7 +28,7 @@ import { IMessagePassingProtocol } from 'vs/base/parts/ipc/common/ipc';
 import Event, { Emitter } from 'vs/base/common/event';
 import { WatchDog } from 'vs/base/common/watchDog';
 import { createQueuedSender, IQueuedSender } from 'vs/base/node/processes';
-import { IInitData, IInitConfiguration } from 'vs/workbench/api/node/extHost.protocol';
+import { IInitData } from 'vs/workbench/api/node/extHost.protocol';
 import { MainProcessExtensionService } from 'vs/workbench/api/node/mainThreadExtensionService';
 import { IWorkspaceConfigurationService } from 'vs/workbench/services/configuration/common/configuration';
 
@@ -78,14 +78,14 @@ export class ExtensionHostProcessWorker {
 		@ITelemetryService private telemetryService: ITelemetryService
 	) {
 		// handle extension host lifecycle a bit special when we know we are developing an extension that runs inside
-		this.isExtensionDevelopmentHost = !!environmentService.extensionDevelopmentPath;
+		this.isExtensionDevelopmentHost = environmentService.isExtensionDevelopment;
 		this.isExtensionDevelopmentDebugging = !!environmentService.debugExtensionHost.break;
 		this.isExtensionDevelopmentTestFromCli = this.isExtensionDevelopmentHost && !!environmentService.extensionTestsPath && !environmentService.debugExtensionHost.break;
 
 		this.unsentMessages = [];
 		this.extensionHostProcessReady = false;
 		lifecycleService.onWillShutdown(this._onWillShutdown, this);
-		lifecycleService.onShutdown(() => this.terminate());
+		lifecycleService.onShutdown(reason => this.terminate());
 	}
 
 	public start(extensionService: MainProcessExtensionService): void {
@@ -95,7 +95,8 @@ export class ExtensionHostProcessWorker {
 				AMD_ENTRYPOINT: 'vs/workbench/node/extensionHostProcess',
 				PIPE_LOGGING: 'true',
 				VERBOSE_LOGGING: true,
-				VSCODE_WINDOW_ID: String(this.windowService.getWindowId())
+				VSCODE_WINDOW_ID: String(this.windowService.getWindowId()),
+				ELECTRON_NO_ASAR: '1'
 			}),
 			// We only detach the extension host on windows. Linux and Mac orphan by default
 			// and detach under Linux and Mac create another process group.
@@ -122,18 +123,18 @@ export class ExtensionHostProcessWorker {
 				this.extHostWatchDog.start();
 				this.extHostWatchDog.onAlert(() => {
 
-					this.extHostWatchDog.stop();
+					this.extHostWatchDog.reset();
 
 					// log the identifiers of those extensions that
 					// have code and are loaded in the extension host
 					this.extensionService.getExtensions().then(extensions => {
 						const ids: string[] = [];
 						for (const ext of extensions) {
-							if (ext.main) {
+							if (ext.main && this.extensionService.isActivated(ext.id)) {
 								ids.push(ext.id);
 							}
 						}
-						this.telemetryService.publicLog('extHostUnresponsive', ids);
+						this.telemetryService.publicLog('extHostUnresponsive2', { extensionIds: ids });
 					});
 				});
 			});
@@ -248,6 +249,7 @@ export class ExtensionHostProcessWorker {
 			let initData: IInitData = {
 				parentPid: process.pid,
 				environment: {
+					isBuilt: this.environmentService.isBuilt,
 					appSettingsHome: this.environmentService.appSettingsHome,
 					disableExtensions: this.environmentService.disableExtensions,
 					userExtensionsHome: this.environmentService.extensionsPath,
@@ -258,7 +260,7 @@ export class ExtensionHostProcessWorker {
 					workspace: this.contextService.getWorkspace()
 				},
 				extensions: extensionDescriptions,
-				configuration: this.configurationService.getConfiguration<IInitConfiguration>(),
+				configuration: this.configurationService.values(),
 				telemetryInfo
 			};
 			this.extensionHostProcessQueuedSender.send(stringify(initData));

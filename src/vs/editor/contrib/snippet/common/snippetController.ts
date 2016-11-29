@@ -15,7 +15,8 @@ import { Selection } from 'vs/editor/common/core/selection';
 import * as editorCommon from 'vs/editor/common/editorCommon';
 import { CommonEditorRegistry, commonEditorContribution, EditorCommand } from 'vs/editor/common/editorCommonExtensions';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
-import { ICodeSnippet, CodeSnippet } from './snippet';
+import { ISnippetVariableResolver, ICodeSnippet, CodeSnippet } from './snippet';
+import { SnippetVariablesResolver } from './snippetVariables';
 
 import EditorContextKeys = editorCommon.EditorContextKeys;
 
@@ -370,6 +371,45 @@ interface IPreparedSnippet {
 	adaptedSnippet: ICodeSnippet;
 }
 
+class BeforeAfterData {
+
+	static create(model: editorCommon.IModel, selection: Selection, overwriteBefore: number, overwriteAfter: number) {
+
+		let contentBefore = '';
+		if (overwriteBefore > 0) {
+			contentBefore = model.getLineContent(selection.startLineNumber).substring(selection.startColumn - 1 - overwriteBefore, selection.startColumn);
+		}
+
+		let contentAfter = '';
+		if (overwriteAfter > 0) {
+			contentAfter = model.getLineContent(selection.endLineNumber).substring(selection.endColumn - 1, selection.endColumn + overwriteAfter);
+		}
+
+		return new BeforeAfterData(model, contentBefore, contentAfter, overwriteBefore, overwriteAfter);
+	}
+
+	constructor(private readonly _model: editorCommon.IModel,
+		private readonly _contentBefore: string,
+		private readonly _contentAfter: string,
+		public readonly overwriteBefore: number,
+		public readonly overwriteAfter: number
+	) {
+		//
+	}
+
+	next(selection: Selection) {
+		const data = BeforeAfterData.create(this._model, selection, this.overwriteBefore, this.overwriteAfter);
+		let {overwriteBefore, overwriteAfter} = data;
+		if (data._contentBefore !== this._contentBefore) {
+			overwriteBefore = 0;
+		}
+		if (data._contentAfter !== this._contentAfter) {
+			overwriteAfter = 0;
+		}
+		return new BeforeAfterData(this._model, null, null, overwriteBefore, overwriteAfter);
+	}
+}
+
 @commonEditorContribution
 export class SnippetController {
 
@@ -380,11 +420,13 @@ export class SnippetController {
 	}
 
 	private _editor: editorCommon.ICommonCodeEditor;
+	private _variableResolver: ISnippetVariableResolver;
 	protected _currentController: InsertSnippetController;
 	private _inSnippetMode: IContextKey<boolean>;
 
 	constructor(editor: editorCommon.ICommonCodeEditor, @IContextKeyService contextKeyService: IContextKeyService) {
 		this._editor = editor;
+		this._variableResolver = new SnippetVariablesResolver(editor);
 		this._currentController = null;
 		this._inSnippetMode = CONTEXT_SNIPPET_MODE.bindTo(contextKeyService);
 	}
@@ -398,6 +440,11 @@ export class SnippetController {
 
 	public getId(): string {
 		return SnippetController.ID;
+	}
+
+	public insertSnippet(template: string, overwriteBefore: number, overwriteAfter: number): void {
+		const snippet = CodeSnippet.fromTextmate(template, this._variableResolver);
+		this.run(snippet, overwriteBefore, overwriteAfter);
 	}
 
 	public run(snippet: CodeSnippet, overwriteBefore: number, overwriteAfter: number, stripPrefix?: boolean): void {
@@ -441,25 +488,6 @@ export class SnippetController {
 				prevController.dispose();
 			}
 		}
-	}
-
-	private static _getTypeRangeForSelection(model: editorCommon.IModel, selection: Selection, overwriteBefore: number, overwriteAfter: number): Range {
-		var typeRange: Range;
-		if (overwriteBefore || overwriteAfter) {
-			typeRange = model.validateRange(Range.plusRange(selection, {
-				startLineNumber: selection.positionLineNumber,
-				startColumn: selection.positionColumn - overwriteBefore,
-				endLineNumber: selection.positionLineNumber,
-				endColumn: selection.positionColumn + overwriteAfter
-			}));
-		} else {
-			typeRange = selection;
-		}
-		return typeRange;
-	}
-
-	private static _getAdaptedSnippet(model: editorCommon.IModel, snippet: CodeSnippet, typeRange: Range): ICodeSnippet {
-		return snippet.bind(model.getLineContent(typeRange.startLineNumber), typeRange.startLineNumber - 1, typeRange.startColumn - 1, model);
 	}
 
 	private static _addCommandForSnippet(model: editorCommon.ITextModel, adaptedSnippet: ICodeSnippet, typeRange: Range, out: editorCommon.IIdentifiedSingleEditOperation[]): void {
@@ -507,6 +535,7 @@ export class SnippetController {
 		const edits: editorCommon.IIdentifiedSingleEditOperation[] = [];
 		const selections = this._editor.getSelections();
 		const model = this._editor.getModel();
+		const primaryBeforeAfter = BeforeAfterData.create(model, selections[0], overwriteBefore, overwriteAfter);
 
 		let totalDelta = 0;
 		const newSelections: { offset: number; i: number }[] = [];
@@ -519,7 +548,18 @@ export class SnippetController {
 
 		for (const {selection, i} of selectionEntries) {
 
-			let {adaptedSnippet, typeRange} = SnippetController._prepareSnippet(this._editor, selection, snippet, overwriteBefore, overwriteAfter, stripPrefix);
+			// only use overwrite[Before|After] for secondary cursors
+			// when the same text as with the primary cursor is selected
+			const beforeAfter = i !== 0 ? primaryBeforeAfter.next(selection) : primaryBeforeAfter;
+
+			let {adaptedSnippet, typeRange} = SnippetController._prepareSnippet(
+				this._editor,
+				selection,
+				snippet,
+				beforeAfter.overwriteBefore,
+				beforeAfter.overwriteAfter,
+				stripPrefix
+			);
 
 			SnippetController._addCommandForSnippet(this._editor.getModel(), adaptedSnippet, typeRange, edits);
 
@@ -601,6 +641,25 @@ export class SnippetController {
 			typeRange: typeRange,
 			adaptedSnippet: adaptedSnippet
 		};
+	}
+
+	private static _getTypeRangeForSelection(model: editorCommon.IModel, selection: Selection, overwriteBefore: number, overwriteAfter: number): Range {
+		var typeRange: Range;
+		if (overwriteBefore || overwriteAfter) {
+			typeRange = model.validateRange(Range.plusRange(selection, {
+				startLineNumber: selection.positionLineNumber,
+				startColumn: selection.positionColumn - overwriteBefore,
+				endLineNumber: selection.positionLineNumber,
+				endColumn: selection.positionColumn + overwriteAfter
+			}));
+		} else {
+			typeRange = selection;
+		}
+		return typeRange;
+	}
+
+	private static _getAdaptedSnippet(model: editorCommon.IModel, snippet: CodeSnippet, typeRange: Range): ICodeSnippet {
+		return snippet.bind(model.getLineContent(typeRange.startLineNumber), typeRange.startLineNumber - 1, typeRange.startColumn - 1, model);
 	}
 
 	private static _getSnippetCursorOnly(snippet: ICodeSnippet): editorCommon.IPosition {
