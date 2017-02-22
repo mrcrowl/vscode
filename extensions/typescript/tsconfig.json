@@ -1,11 +1,15 @@
 {
 	"compileOnSave": true,
 	"compilerOptions": {
-		"noLib": true,
 		"target": "es5",
 		"module": "commonjs",
 		"sourceMap": true,
-		"outDir": "./out"
+		"lib": [
+			"es5",
+			"es2015.promise"
+		],
+		"outDir": "./out",
+		"strictNullChecks": true
 	},
 	"exclude": [
 		"node_modules",

@@ -56,13 +56,11 @@ var ALL_EDITOR_TASKS = [
 
 	// hygiene tasks
 	'tslint',
-	'hygiene',
 ];
 var runningEditorTasks = process.argv.length > 2 && process.argv.slice(2).every(function (arg) { return (ALL_EDITOR_TASKS.indexOf(arg) !== -1); });
 
 if (runningEditorTasks) {
 	require(`./build/gulpfile.editor`);
-	require(`./build/gulpfile.hygiene`);
 } else {
 	// Load all the gulpfiles only if running tasks other than the editor tasks
 	const build = path.join(__dirname, 'build');
