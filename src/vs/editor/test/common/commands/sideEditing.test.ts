@@ -12,7 +12,7 @@ import { Range } from 'vs/editor/common/core/range';
 import { Selection } from 'vs/editor/common/core/selection';
 import { IIdentifiedSingleEditOperation } from 'vs/editor/common/editorCommon';
 import { Model } from 'vs/editor/common/model/model';
-import { ILineEdit, ModelLine } from 'vs/editor/common/model/modelLine';
+import { ILineEdit, ModelLine, LineMarker, MarkersTracker } from 'vs/editor/common/model/modelLine';
 import { MockConfiguration } from 'vs/editor/test/common/mocks/mockConfiguration';
 import { viewModelHelper } from 'vs/editor/test/common/editorTestUtils';
 
@@ -40,18 +40,11 @@ function testCommand(lines: string[], selection: Selection, edits: IIdentifiedSi
 
 function testLineEditMarker(text: string, column: number, stickToPreviousCharacter: boolean, edit: ILineEdit, expectedColumn: number): void {
 	var line = new ModelLine(1, text, NO_TAB_SIZE);
-	line.addMarker({
-		id: '1',
-		line: null,
-		column: column,
-		stickToPreviousCharacter: stickToPreviousCharacter,
-		oldLineNumber: 0,
-		oldColumn: 0,
-	});
+	line.addMarker(new LineMarker('1', 0, new Position(0, column), stickToPreviousCharacter));
 
-	line.applyEdits({}, [edit], NO_TAB_SIZE);
+	line.applyEdits(new MarkersTracker(), [edit], NO_TAB_SIZE);
 
-	assert.equal(line.getMarkers()[0].column, expectedColumn);
+	assert.equal(line.getMarkers()[0].position.column, expectedColumn);
 }
 
 suite('Editor Side Editing - collapsed selection', () => {

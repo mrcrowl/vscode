@@ -2,6 +2,7 @@
   "name": "html",
   "version": "0.1.0",
   "publisher": "vscode",
+  "aiKey": "AIF-d9b70cd4-b9f9-4d70-929b-a071c400b217",
   "engines": {
     "vscode": "0.10.x"
   },
@@ -138,11 +139,22 @@
           "type": "boolean",
           "default": true,
           "description": "%html.suggest.html5.desc%"
+        },
+        "html.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the HTML language server."
         }
       }
     }
   },
   "dependencies": {
+    "vscode-extension-telemetry": "0.0.5",
     "vscode-languageclient": "3.0.1-alpha.2",
     "vscode-languageserver-types": "3.0.1-alpha.2",
     "vscode-nls": "^1.0.7"

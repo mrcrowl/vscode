@@ -32,7 +32,7 @@ import { Delegate, Renderer } from 'vs/workbench/parts/extensions/browser/extens
 import { IExtensionsWorkbenchService, IExtension, IExtensionsViewlet, VIEWLET_ID, ExtensionState } from '../common/extensions';
 import {
 	ShowRecommendedExtensionsAction, ShowWorkspaceRecommendedExtensionsAction, ShowRecommendedKeymapExtensionsAction, ShowPopularExtensionsAction, ShowInstalledExtensionsAction, ShowDisabledExtensionsAction,
-	ShowOutdatedExtensionsAction, ClearExtensionsInputAction, ChangeSortAction, UpdateAllAction
+	ShowOutdatedExtensionsAction, ClearExtensionsInputAction, ChangeSortAction, UpdateAllAction, CheckForUpdatesAction
 } from 'vs/workbench/parts/extensions/browser/extensionsActions';
 import { InstallVSIXAction } from 'vs/workbench/parts/extensions/electron-browser/extensionsActions';
 import { IExtensionManagementService, IExtensionGalleryService, IExtensionTipsService, SortBy, SortOrder, IQueryOptions, LocalExtensionType } from 'vs/platform/extensionManagement/common/extensionManagement';
@@ -44,7 +44,7 @@ import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/edi
 import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
 import { IMessageService, CloseAction } from 'vs/platform/message/common/message';
 import Severity from 'vs/base/common/severity';
-import { IActivityService, ProgressBadge, NumberBadge } from 'vs/workbench/services/activity/common/activityService';
+import { IActivityBarService, ProgressBadge, NumberBadge } from 'vs/workbench/services/activity/common/activityBarService';
 import { IExtensionService } from 'vs/platform/extensions/common/extensions';
 
 interface SearchInputEvent extends Event {
@@ -179,6 +179,7 @@ export class ExtensionsViewlet extends Viewlet implements IExtensionsViewlet {
 				this.instantiationService.createInstance(ChangeSortAction, 'extensions.sort..asc', localize('ascending', "Sort Order: ↑"), this.onSearchChange, undefined, 'asc'),
 				this.instantiationService.createInstance(ChangeSortAction, 'extensions.sort..desc', localize('descending', "Sort Order: ↓"), this.onSearchChange, undefined, 'desc'),
 				new Separator(),
+				this.instantiationService.createInstance(CheckForUpdatesAction, CheckForUpdatesAction.ID, CheckForUpdatesAction.LABEL),
 				this.instantiationService.createInstance(UpdateAllAction, UpdateAllAction.ID, UpdateAllAction.LABEL),
 				this.instantiationService.createInstance(InstallVSIXAction, InstallVSIXAction.ID, InstallVSIXAction.LABEL)
 			];
@@ -421,7 +422,7 @@ export class StatusUpdater implements IWorkbenchContribution {
 	private disposables: IDisposable[];
 
 	constructor(
-		@IActivityService private activityService: IActivityService,
+		@IActivityBarService private activityBarService: IActivityBarService,
 		@IExtensionsWorkbenchService private extensionsWorkbenchService: IExtensionsWorkbenchService
 	) {
 		extensionsWorkbenchService.onChange(this.onServiceChange, this, this.disposables);
@@ -433,16 +434,16 @@ export class StatusUpdater implements IWorkbenchContribution {
 
 	private onServiceChange(): void {
 		if (this.extensionsWorkbenchService.local.some(e => e.state === ExtensionState.Installing)) {
-			this.activityService.showActivity(VIEWLET_ID, new ProgressBadge(() => localize('extensions', 'Extensions')), 'extensions-badge progress-badge');
+			this.activityBarService.showActivity(VIEWLET_ID, new ProgressBadge(() => localize('extensions', 'Extensions')), 'extensions-badge progress-badge');
 			return;
 		}
 
 		const outdated = this.extensionsWorkbenchService.local.reduce((r, e) => r + (e.outdated ? 1 : 0), 0);
 		if (outdated > 0) {
 			const badge = new NumberBadge(outdated, n => localize('outdatedExtensions', '{0} Outdated Extensions', n));
-			this.activityService.showActivity(VIEWLET_ID, badge, 'extensions-badge count-badge');
+			this.activityBarService.showActivity(VIEWLET_ID, badge, 'extensions-badge count-badge');
 		} else {
-			this.activityService.showActivity(VIEWLET_ID, null, 'extensions-badge');
+			this.activityBarService.showActivity(VIEWLET_ID, null, 'extensions-badge');
 		}
 	}
 

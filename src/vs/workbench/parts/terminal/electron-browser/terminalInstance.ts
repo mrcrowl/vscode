@@ -14,11 +14,11 @@ import path = require('path');
 import platform = require('vs/base/common/platform');
 import xterm = require('xterm');
 import { Dimension } from 'vs/base/browser/builder';
-import { IContextKey } from 'vs/platform/contextkey/common/contextkey';
+import { IContextKeyService, IContextKey } from 'vs/platform/contextkey/common/contextkey';
 import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
 import { IMessageService, Severity } from 'vs/platform/message/common/message';
 import { IStringDictionary } from 'vs/base/common/collections';
-import { ITerminalInstance, IShell } from 'vs/workbench/parts/terminal/common/terminal';
+import { ITerminalInstance, KEYBINDING_CONTEXT_TERMINAL_TEXT_SELECTED, IShell } from 'vs/workbench/parts/terminal/common/terminal';
 import { IWorkspace } from 'vs/platform/workspace/common/workspace';
 import { Keybinding } from 'vs/base/common/keybinding';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
@@ -34,6 +34,7 @@ export class TerminalInstance implements ITerminalInstance {
 
 	private _id: number;
 	private _isExiting: boolean;
+	private _hadFocusOnExit: boolean;
 	private _isLaunching: boolean;
 	private _isVisible: boolean;
 	private _onDisposed: Emitter<TerminalInstance>;
@@ -41,12 +42,13 @@ export class TerminalInstance implements ITerminalInstance {
 	private _onTitleChanged: Emitter<string>;
 	private _process: cp.ChildProcess;
 	private _processId: number;
-	private _skipTerminalKeybindings: Keybinding[];
+	private _skipTerminalCommands: string[];
 	private _title: string;
 	private _toDispose: lifecycle.IDisposable[];
 	private _wrapperElement: HTMLDivElement;
 	private _xterm: any;
 	private _xtermElement: HTMLDivElement;
+	private _terminalHasTextContextKey: IContextKey<boolean>;
 
 	public get id(): number { return this._id; }
 	public get processId(): number { return this._processId; }
@@ -54,6 +56,7 @@ export class TerminalInstance implements ITerminalInstance {
 	public get onProcessIdReady(): Event<TerminalInstance> { return this._onProcessIdReady.event; }
 	public get onTitleChanged(): Event<string> { return this._onTitleChanged.event; }
 	public get title(): string { return this._title; }
+	public get hadFocusOnExit(): boolean { return this._hadFocusOnExit; }
 
 	public constructor(
 		private _terminalFocusContextKey: IContextKey<boolean>,
@@ -62,15 +65,18 @@ export class TerminalInstance implements ITerminalInstance {
 		workspace: IWorkspace,
 		name: string,
 		shell: IShell,
+		@IContextKeyService private _contextKeyService: IContextKeyService,
 		@IKeybindingService private _keybindingService: IKeybindingService,
 		@IMessageService private _messageService: IMessageService
 	) {
 		this._toDispose = [];
-		this._skipTerminalKeybindings = [];
+		this._skipTerminalCommands = [];
 		this._isExiting = false;
+		this._hadFocusOnExit = false;
 		this._isLaunching = true;
 		this._isVisible = false;
 		this._id = TerminalInstance._idCounter++;
+		this._terminalHasTextContextKey = KEYBINDING_CONTEXT_TERMINAL_TEXT_SELECTED.bindTo(this._contextKeyService);
 
 		this._onDisposed = new Emitter<TerminalInstance>();
 		this._onProcessIdReady = new Emitter<TerminalInstance>();
@@ -111,15 +117,17 @@ export class TerminalInstance implements ITerminalInstance {
 		this._xterm.on('data', (data) => {
 			this._process.send({
 				event: 'input',
-				data: this.sanitizeInput(data)
+				data: this._sanitizeInput(data)
 			});
 			return false;
 		});
 		this._xterm.attachCustomKeydownHandler((event: KeyboardEvent) => {
-			// Allow the toggle tab mode keybinding to pass through the terminal so that focus can
-			// be escaped
-			let standardKeyboardEvent = new StandardKeyboardEvent(event);
-			if (this._skipTerminalKeybindings.some((k) => standardKeyboardEvent.equals(k.value))) {
+			// Skip processing by xterm.js of keyboard events that resolve to commands described
+			// within commandsToSkipShell
+			const standardKeyboardEvent = new StandardKeyboardEvent(event);
+			const keybinding = new Keybinding(standardKeyboardEvent.asKeybinding());
+			const resolveResult = this._keybindingService.resolve(keybinding, standardKeyboardEvent.target);
+			if (resolveResult && this._skipTerminalCommands.some(k => k === resolveResult.commandId)) {
 				event.preventDefault();
 				return false;
 			}
@@ -128,6 +136,22 @@ export class TerminalInstance implements ITerminalInstance {
 			if (TabFocus.getTabFocusMode() && event.keyCode === 9) {
 				return false;
 			}
+		});
+		(<HTMLElement>this._xterm.element).addEventListener('mouseup', event => {
+			// Wait until mouseup has propogated through the DOM before evaluating the new selection
+			// state.
+			setTimeout(() => {
+				this._refreshSelectionContextKey();
+			}, 0);
+		});
+
+		// xterm.js currently drops selection on keyup as we need to handle this case.
+		(<HTMLElement>this._xterm.element).addEventListener('keyup', event => {
+			// Wait until keyup has propogated through the DOM before evaluating the new selection
+			// state.
+			setTimeout(() => {
+				this._refreshSelectionContextKey();
+			}, 0);
 		});
 
 		let xtermHelper: HTMLElement = this._xterm.element.querySelector('.xterm-helpers');
@@ -165,6 +189,9 @@ export class TerminalInstance implements ITerminalInstance {
 		const height = parseInt(computedStyle.getPropertyValue('height').replace('px', ''), 10);
 		this.layout(new Dimension(width, height));
 		this.setVisible(this._isVisible);
+		this.setCursorBlink(this._configHelper.getCursorBlink());
+		this.setCommandsToSkipShell(this._configHelper.getCommandsToSkipShell());
+		this.setScrollback(this._configHelper.getScrollback());
 	}
 
 	public copySelection(): void {
@@ -177,6 +204,10 @@ export class TerminalInstance implements ITerminalInstance {
 
 	public dispose(): void {
 		this._isExiting = true;
+
+		if (this._xterm && this._xterm.element) {
+			this._hadFocusOnExit = DOM.hasClass(this._xterm.element, 'focus');
+		}
 		if (this._wrapperElement) {
 			this._container.removeChild(this._wrapperElement);
 			this._wrapperElement = null;
@@ -255,7 +286,11 @@ export class TerminalInstance implements ITerminalInstance {
 		this._xterm.clear();
 	}
 
-	private sanitizeInput(data: any) {
+	private _refreshSelectionContextKey() {
+		this._terminalHasTextContextKey.set(!window.getSelection().isCollapsed);
+	}
+
+	private _sanitizeInput(data: any) {
 		return typeof data === 'string' ? data.replace(TerminalInstance.EOL_REGEX, os.EOL) : data;
 	}
 
@@ -353,11 +388,7 @@ export class TerminalInstance implements ITerminalInstance {
 	}
 
 	public setCommandsToSkipShell(commands: string[]): void {
-		this._skipTerminalKeybindings = commands.map((c) => {
-			return this._keybindingService.lookupKeybindings(c);
-		}).reduce((prev, curr) => {
-			return prev.concat(curr);
-		}, []);
+		this._skipTerminalCommands = commands;
 	}
 
 	public setScrollback(lineCount: number): void {

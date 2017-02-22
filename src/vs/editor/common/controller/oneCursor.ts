@@ -5,7 +5,6 @@
 'use strict';
 
 import { illegalArgument } from 'vs/base/common/errors';
-import { CursorMoveHelper } from 'vs/editor/common/controller/cursorMoveHelper';
 import { SingleCursorState, CursorConfiguration, ICursorSimpleModel } from 'vs/editor/common/controller/cursorCommon';
 import { Position } from 'vs/editor/common/core/position';
 import { Range } from 'vs/editor/common/core/range';
@@ -222,7 +221,7 @@ export class OneCursor implements IOneCursor {
 
 	private _ensureMarker(markerId: string, lineNumber: number, column: number, stickToPreviousCharacter: boolean): string {
 		if (!markerId) {
-			return this.model._addMarker(lineNumber, column, stickToPreviousCharacter);
+			return this.model._addMarker(0, lineNumber, column, stickToPreviousCharacter);
 		} else {
 			this.model._changeMarker(markerId, lineNumber, column);
 			this.model._changeMarkerStickiness(markerId, stickToPreviousCharacter);
@@ -512,12 +511,6 @@ export class OneCursor implements IOneCursor {
 		}
 		return visibleRange;
 	}
-	public getColumnAtBeginningOfViewLine(lineNumber: number, column: number): number {
-		return CursorMoveHelper.getColumnAtBeginningOfLine(this.viewModel, lineNumber, column);
-	}
-	public getColumnAtEndOfViewLine(lineNumber: number, column: number): number {
-		return CursorMoveHelper.getColumnAtEndOfLine(this.viewModel, lineNumber, column);
-	}
 	public getNearestRevealViewPositionInViewport(): Position {
 		const position = this.viewState.position;
 		const revealRange = this.getRevealViewLinesRangeInViewport();
@@ -764,25 +757,17 @@ export class OneCursorOp {
 	}
 
 	public static moveToBeginningOfLine(cursor: OneCursor, inSelectionMode: boolean, ctx: IOneCursorOperationContext): boolean {
-		let validatedViewPosition = cursor.viewState.position;
-		let viewLineNumber = validatedViewPosition.lineNumber;
-		let viewColumn = validatedViewPosition.column;
-
-		viewColumn = cursor.getColumnAtBeginningOfViewLine(viewLineNumber, viewColumn);
-		ctx.cursorPositionChangeReason = editorCommon.CursorChangeReason.Explicit;
-		cursor.moveViewPosition(inSelectionMode, viewLineNumber, viewColumn, 0, true);
-		return true;
+		return this._applyMoveOperationResult(
+			cursor, ctx,
+			this._fromViewCursorState(cursor, MoveOperations.moveToBeginningOfLine(cursor.config, cursor.viewModel, cursor.viewState, inSelectionMode))
+		);
 	}
 
 	public static moveToEndOfLine(cursor: OneCursor, inSelectionMode: boolean, ctx: IOneCursorOperationContext): boolean {
-		let validatedViewPosition = cursor.viewState.position;
-		let viewLineNumber = validatedViewPosition.lineNumber;
-		let viewColumn = validatedViewPosition.column;
-
-		viewColumn = cursor.getColumnAtEndOfViewLine(viewLineNumber, viewColumn);
-		ctx.cursorPositionChangeReason = editorCommon.CursorChangeReason.Explicit;
-		cursor.moveViewPosition(inSelectionMode, viewLineNumber, viewColumn, 0, true);
-		return true;
+		return this._applyMoveOperationResult(
+			cursor, ctx,
+			this._fromViewCursorState(cursor, MoveOperations.moveToEndOfLine(cursor.config, cursor.viewModel, cursor.viewState, inSelectionMode))
+		);
 	}
 
 	public static expandLineSelection(cursor: OneCursor, ctx: IOneCursorOperationContext): boolean {
@@ -947,7 +932,7 @@ class Utils {
 	 * Tests if position is contained inside range.
 	 * If position is either the starting or ending of a range, false is returned.
 	 */
-	static isPositionInsideRange(position: editorCommon.IPosition, range: editorCommon.IRange): boolean {
+	static isPositionInsideRange(position: Position, range: Range): boolean {
 		if (position.lineNumber < range.startLineNumber) {
 			return false;
 		}
@@ -963,7 +948,7 @@ class Utils {
 		return true;
 	}
 
-	static isPositionAtRangeEdges(position: editorCommon.IPosition, range: editorCommon.IRange): boolean {
+	static isPositionAtRangeEdges(position: Position, range: Range): boolean {
 		if (position.lineNumber === range.startLineNumber && position.column === range.startColumn) {
 			return true;
 		}

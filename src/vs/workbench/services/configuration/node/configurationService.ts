@@ -248,12 +248,8 @@ export class WorkspaceConfigurationService implements IWorkspaceConfigurationSer
 
 					return this.isWorkspaceConfigurationFile(this.contextService.toWorkspaceRelativePath(stat.resource)); // only workspace config files
 				}).map(stat => stat.resource));
-			}, (err) => {
-				if (err) {
-					return []; // never fail this call
-				}
-			}).then((contents: IContent[]) => {
-				contents.forEach(content => this.workspaceFilePathToConfiguration[this.contextService.toWorkspaceRelativePath(content.resource)] = TPromise.as(newConfigFile(content.value)));
+			}, err => [] /* never fail this call */).then((contents: IContent[]) => {
+				contents.forEach(content => this.workspaceFilePathToConfiguration[this.contextService.toWorkspaceRelativePath(content.resource)] = TPromise.as(newConfigFile(content.value, content.resource.toString())));
 			}, errors.onUnexpectedError);
 		}
 
@@ -298,7 +294,7 @@ export class WorkspaceConfigurationService implements IWorkspaceConfigurationSer
 					break;
 				case FileChangeType.UPDATED:
 				case FileChangeType.ADDED:
-					this.workspaceFilePathToConfiguration[workspacePath] = resolveContent(resource).then(content => newConfigFile(content.value), errors.onUnexpectedError);
+					this.workspaceFilePathToConfiguration[workspacePath] = resolveContent(resource).then(content => newConfigFile(content.value, content.resource.toString()), errors.onUnexpectedError);
 					affectedByChanges = true;
 			}
 		}

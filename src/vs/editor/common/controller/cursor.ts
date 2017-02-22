@@ -205,14 +205,6 @@ export class Cursor extends EventEmitter {
 		}, 'restoreState', null);
 	}
 
-	public setEditableRange(range: editorCommon.IRange): void {
-		this.model.setEditableRange(range);
-	}
-
-	public getEditableRange(): Range {
-		return this.model.getEditableRange();
-	}
-
 	public addTypingListener(character: string, callback: ITypingListener): void {
 		if (!this.typingListeners.hasOwnProperty(character)) {
 			this.typingListeners[character] = [];
@@ -495,8 +487,8 @@ export class Cursor extends EventEmitter {
 			}
 
 			var l = ctx.selectionStartMarkers.length;
-			ctx.selectionStartMarkers[l] = this.model._addMarker(selection.selectionStartLineNumber, selection.selectionStartColumn, selectionMarkerStickToPreviousCharacter);
-			ctx.positionMarkers[l] = this.model._addMarker(selection.positionLineNumber, selection.positionColumn, positionMarkerStickToPreviousCharacter);
+			ctx.selectionStartMarkers[l] = this.model._addMarker(0, selection.selectionStartLineNumber, selection.selectionStartColumn, selectionMarkerStickToPreviousCharacter);
+			ctx.positionMarkers[l] = this.model._addMarker(0, selection.positionLineNumber, selection.positionColumn, positionMarkerStickToPreviousCharacter);
 			return l.toString();
 		};
 
