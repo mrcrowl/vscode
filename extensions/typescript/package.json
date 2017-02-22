@@ -2,13 +2,13 @@
 	"name": "typescript",
 	"description": "Extension to add Typescript capabilities to VSCode.",
 	"displayName": "TypeScript support for VSCode",
-	"version": "0.10.1",
+	"version": "0.10.4",
 	"author": "Microsoft Corporation",
 	"license": "MIT",
 	"publisher": "vscode",
 	"aiKey": "AIF-d9b70cd4-b9f9-4d70-929b-a071c400b217",
 	"engines": {
-		"vscode": "*"
+		"vscode": "^1.7.0"
 	},
 	"dependencies": {
 		"@types/semver": "^5.3.30",
@@ -17,10 +17,15 @@
 		"vscode-nls": "^2.0.1",
 		"typescript": "2.0.10"
 	},
+	"devDependencies": {
+		"vscode": "^1.0.0",
+		"@types/node": "^6.0.40"
+	},
 	"scripts": {
-		"postinstall": "node ./bin/postinstall",
-		"vscode:prepublish": "node ../../node_modules/gulp/bin/gulp.js --gulpfile ../../build/gulpfile.extensions.js compile-extension:typescript ./tsconfig.json",
-		"update-grammars": "node ./build/update-grammars.js"
+		"postinstall": "node ./node_modules/vscode/bin/install",
+		"update-grammars": "node ./build/update-grammars.js",
+		"vscode:prepublish": "tsc -p ./",
+		"compile": "tsc -watch -p ./"
 	},
 	"activationEvents": [
 		"onLanguage:javascript",
