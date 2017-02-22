@@ -39,19 +39,19 @@ export class SideBySideEditor extends BaseEditor {
 		super(SideBySideEditor.ID, telemetryService);
 	}
 
-	public createEditor(parent: Builder): void {
+	protected createEditor(parent: Builder): void {
 		const parentElement = parent.getHTMLElement();
 		DOM.addClass(parentElement, 'side-by-side-editor');
 		this.createSash(parentElement);
 	}
 
 	public setInput(newInput: SideBySideEditorInput, options?: EditorOptions): TPromise<void> {
-		const oldInput = <SideBySideEditorInput>this.getInput();
+		const oldInput = <SideBySideEditorInput>this.input;
 		return super.setInput(newInput, options)
 			.then(() => this.updateInput(oldInput, newInput, options));
 	}
 
-	public setEditorVisible(visible: boolean, position: Position): void {
+	protected setEditorVisible(visible: boolean, position: Position): void {
 		if (this.masterEditor) {
 			this.masterEditor.setVisible(visible, position);
 		}
@@ -118,17 +118,18 @@ export class SideBySideEditor extends BaseEditor {
 		} else {
 			this.detailsEditor.setInput(newInput.details);
 			this.masterEditor.setInput(newInput.master, options);
+			return undefined;
 		}
 	}
 
 	private setNewInput(newInput: SideBySideEditorInput, options?: EditorOptions): TPromise<void> {
 		return TPromise.join([
 			this._createEditor(<EditorInput>newInput.details, this.detailsEditorContainer),
-			this._createEditor(<EditorInput>newInput.master, this.masterEditorContainer, options)
-		]).then(result => this.onEditorsCreated(result[0], result[1], newInput.details, newInput.master));
+			this._createEditor(<EditorInput>newInput.master, this.masterEditorContainer)
+		]).then(result => this.onEditorsCreated(result[0], result[1], newInput.details, newInput.master, options));
 	}
 
-	private _createEditor(editorInput: EditorInput, container: HTMLElement, options?: EditorOptions): TPromise<BaseEditor> {
+	private _createEditor(editorInput: EditorInput, container: HTMLElement): TPromise<BaseEditor> {
 		const descriptor = Registry.as<IEditorRegistry>(EditorExtensions.Editors).getEditor(editorInput);
 		if (!descriptor) {
 			return TPromise.wrapError(new Error(strings.format('Can not find a registered editor for the input {0}', editorInput)));
@@ -141,11 +142,11 @@ export class SideBySideEditor extends BaseEditor {
 			});
 	}
 
-	private onEditorsCreated(details: BaseEditor, master: BaseEditor, detailsInput: EditorInput, masterInput: EditorInput): TPromise<void> {
+	private onEditorsCreated(details: BaseEditor, master: BaseEditor, detailsInput: EditorInput, masterInput: EditorInput, options: EditorOptions): TPromise<void> {
 		this.detailsEditor = details;
 		this.masterEditor = master;
 		this.dolayout(this.sash.getVerticalSashLeft());
-		return TPromise.join([this.detailsEditor.setInput(detailsInput), this.masterEditor.setInput(masterInput)]).then(() => this.focus());
+		return TPromise.join([this.detailsEditor.setInput(detailsInput), this.masterEditor.setInput(masterInput, options)]).then(() => this.focus());
 	}
 
 	private createEditorContainers(): void {
@@ -188,7 +189,7 @@ export class SideBySideEditor extends BaseEditor {
 		}
 		if (this.masterEditor) {
 			this.masterEditor.dispose();
-			this.detailsEditor = null;
+			this.masterEditor = null;
 		}
 		if (this.detailsEditorContainer) {
 			parentContainer.removeChild(this.detailsEditorContainer);
@@ -198,5 +199,10 @@ export class SideBySideEditor extends BaseEditor {
 			parentContainer.removeChild(this.masterEditorContainer);
 			this.masterEditorContainer = null;
 		}
+	}
+
+	public dispose(): void {
+		this.disposeEditors();
+		super.dispose();
 	}
 }

@@ -27,19 +27,11 @@
 	border-spacing: 13px 17px;
 }
 
-@media (min-height: 501px) {
-	.monaco-workbench > .part.editor.empty > .content > .watermark {
-		display: block;
-	}
+.monaco-workbench > .part.editor.empty.max-height-478px > .content > .watermark {
+	display: none;
 }
-
-@media (max-height: 500px) {
-	.monaco-workbench > .part.editor.empty > .content > .watermark {
-		display: none;
-	}
-	.monaco-workbench .part.editor.empty {
-		background-position-y: 50%;
-	}
+.monaco-workbench .part.editor.empty.max-height-478px {
+	background-position-y: 50%;
 }
 
 .monaco-workbench > .part.editor.empty > .content > .watermark dl {
@@ -64,6 +56,15 @@
 
 .monaco-workbench.mac > .part.editor.empty > .content > .watermark dd > .shortcuts {
 	letter-spacing: 0.15em;
+	font-family: "Lucida Grande", sans-serif;
+}
+
+.monaco-workbench > .part.editor.empty > .content > .watermark dd > .unbound {
+	padding-left: 0.5em;
+	padding-right: 0.5em;
+}
+
+.monaco-workbench.mac > .part.editor.empty > .content > .watermark dd > .unbound {
 	font-family: "Lucida Grande", sans-serif;
 }
 

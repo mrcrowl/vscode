@@ -53,9 +53,14 @@ export class MainThreadOutputService extends MainThreadOutputServiceShape {
 	public $close(channelId: string): TPromise<void> {
 		const panel = this._panelService.getActivePanel();
 		if (panel && panel.getId() === OUTPUT_PANEL_ID && channelId === this._outputService.getActiveChannel().id) {
-			this._partService.setPanelHidden(true);
+			return this._partService.setPanelHidden(true);
 		}
 
+		return undefined;
+	}
+
+	public $dispose(channelId: string, label: string): TPromise<void> {
+		this._getChannel(channelId, label).dispose();
 		return undefined;
 	}
 }

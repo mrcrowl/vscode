@@ -5,19 +5,29 @@
 			"type": "node",
 			"request": "launch",
 			"name": "Unit Tests",
+			"protocol": "legacy",
 			"program": "${workspaceRoot}/node_modules/mocha/bin/_mocha",
-			"runtimeExecutable": "${execPath}",
+			"runtimeExecutable": "${workspaceRoot}/.build/electron/Code - OSS.app/Contents/MacOS/Electron",
+			"windows": {
+				"runtimeExecutable": "${workspaceRoot}/.build/electron/Code - OSS.exe"
+			},
+			"linux": {
+				"runtimeExecutable": "${workspaceRoot}/.build/electron/code-oss"
+			},
 			"stopOnEntry": false,
 			"args": [
 				"--timeout",
-				"999999"
+				"2000"
 			],
 			"cwd": "${workspaceRoot}",
 			"env": {
 				"ELECTRON_RUN_AS_NODE": "true"
 			},
 			"sourceMaps": true,
-			"outFiles": [ "${workspaceRoot}/out/**/*.js" ]
+			"outFiles": [
+				"${workspaceRoot}/out/**/*.js"
+			],
+			"preLaunchTask": "electron"
 		},
 		{
 			"type": "node",
@@ -34,30 +44,40 @@
 			"type": "node",
 			"request": "attach",
 			"name": "Attach to Extension Host",
+			"protocol": "legacy",
 			"port": 5870,
 			"sourceMaps": true,
-			"outFiles": [ "${workspaceRoot}/out/**/*.js" ]
+			"restart": true,
+			"outFiles": [
+				"${workspaceRoot}/out/**/*.js"
+			]
 		},
 		{
 			"type": "node",
 			"request": "attach",
 			"name": "Attach to Shared Process",
+			"protocol": "legacy",
 			"port": 5871,
 			"sourceMaps": true,
-			"outFiles": [ "${workspaceRoot}/out/**/*.js" ]
+			"outFiles": [
+				"${workspaceRoot}/out/**/*.js"
+			]
 		},
 		{
 			"type": "node",
 			"request": "attach",
 			"name": "Attach to CLI Process",
+			"protocol": "legacy",
 			"port": 5874,
 			"sourceMaps": true,
-			"outFiles": [ "${workspaceRoot}/out/**/*.js" ]
+			"outFiles": [
+				"${workspaceRoot}/out/**/*.js"
+			]
 		},
 		{
 			"type": "extensionHost",
 			"request": "launch",
-			"name": "VSCode API Tests",
+			"name": "VS Code API Tests",
 			"runtimeExecutable": "${execPath}",
 			"args": [
 				"${workspaceRoot}/extensions/vscode-api-tests/testWorkspace",
@@ -65,12 +85,14 @@
 				"--extensionTestsPath=${workspaceRoot}/extensions/vscode-api-tests/out"
 			],
 			"sourceMaps": true,
-			"outFiles": [ "${workspaceRoot}/out/**/*.js" ]
+			"outFiles": [
+				"${workspaceRoot}/out/**/*.js"
+			]
 		},
 		{
 			"type": "extensionHost",
 			"request": "launch",
-			"name": "VSCode Tokenizer Tests",
+			"name": "VS Code Tokenizer Tests",
 			"runtimeExecutable": "${execPath}",
 			"args": [
 				"${workspaceRoot}/extensions/vscode-colorize-tests/test",
@@ -78,19 +100,21 @@
 				"--extensionTestsPath=${workspaceRoot}/extensions/vscode-colorize-tests/out"
 			],
 			"sourceMaps": true,
-			"outFiles": [ "${workspaceRoot}/out/**/*.js" ]
+			"outFiles": [
+				"${workspaceRoot}/out/**/*.js"
+			]
 		},
 		{
 			"type": "chrome",
 			"request": "attach",
-			"name": "Attach to VSCode",
+			"name": "Attach to VS Code",
 			"port": 9222,
 			"sourceMaps": true
 		},
 		{
 			"type": "chrome",
 			"request": "launch",
-			"name": "Launch VSCode",
+			"name": "Launch VS Code",
 			"windows": {
 				"runtimeExecutable": "${workspaceRoot}/scripts/code.bat"
 			},
@@ -101,17 +125,6 @@
 				"runtimeExecutable": "${workspaceRoot}/scripts/code.sh"
 			},
 			"sourceMaps": true
-		},
-		{
-			"type": "node",
-			"request": "launch",
-			"name": "Debug monaco",
-			"program": "${workspaceRoot}/build/lib/monaco.js",
-			"cwd": "${workspaceRoot}/build/lib"
-			// ,
-			// "port": 5870,
-			// "sourceMaps": true,
-			// "outFiles": [ "${workspaceRoot}/out/**/*.js" ]
 		}
 	]
 }

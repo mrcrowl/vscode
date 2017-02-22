@@ -15,6 +15,7 @@
 	"noResultsFound": "找不到结果。查看设置中配置的排除项 - ",
 	"noResultsIncludes": "“{0}”中未找到任何结果 - ",
 	"noResultsIncludesExcludes": "在“{0}”中找不到结果(“{1}”除外) - ",
+	"openFolder": "打开文件夹",
 	"openSettings.message": "打开设置",
 	"removeAll.confirmation.message": "删除出现在 {1} 文件中的 {0}?",
 	"removeAll.message": "已删除 {1} 文件中出现的 {0}。",
@@ -28,5 +29,6 @@
 	"searchMaxResultsWarning": "结果集仅包含所有匹配项的子集。请使你的搜索更加具体，减少结果。",
 	"searchScope.excludes": "要排除的文件",
 	"searchScope.includes": "要包含的文件",
+	"searchWithoutFolder": "尚未打开文件夹。当前仅可搜索打开的文件夹 - ",
 	"treeAriaLabel": "搜索结果"
 }

@@ -3,19 +3,19 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 'use strict';
-var gulp = require('gulp');
-var tsb = require('gulp-tsb');
-var es = require('event-stream');
+var gulp = require("gulp");
+var tsb = require("gulp-tsb");
+var es = require("event-stream");
 var watch = require('./watch');
-var nls = require('./nls');
-var util = require('./util');
-var reporter_1 = require('./reporter');
-var path = require('path');
-var bom = require('gulp-bom');
-var sourcemaps = require('gulp-sourcemaps');
-var _ = require('underscore');
-var monacodts = require('../monaco/api');
-var fs = require('fs');
+var nls = require("./nls");
+var util = require("./util");
+var reporter_1 = require("./reporter");
+var path = require("path");
+var bom = require("gulp-bom");
+var sourcemaps = require("gulp-sourcemaps");
+var _ = require("underscore");
+var monacodts = require("../monaco/api");
+var fs = require("fs");
 var reporter = reporter_1.createReporter();
 var rootDir = path.join(__dirname, '../../src');
 var options = require('../../src/tsconfig.json').compilerOptions;
@@ -56,7 +56,7 @@ function createCompile(build, emitError) {
 function compileTask(out, build) {
     var compile = createCompile(build, true);
     return function () {
-        var src = es.merge(gulp.src('src/**', { base: 'src' }), gulp.src('node_modules/typescript/lib/lib.d.ts'));
+        var src = es.merge(gulp.src('src/**', { base: 'src' }), gulp.src('node_modules/typescript/lib/lib.d.ts'), gulp.src('node_modules/@types/**/index.d.ts'));
         return src
             .pipe(compile())
             .pipe(gulp.dest(out))
@@ -67,7 +67,7 @@ exports.compileTask = compileTask;
 function watchTask(out, build) {
     var compile = createCompile(build);
     return function () {
-        var src = es.merge(gulp.src('src/**', { base: 'src' }), gulp.src('node_modules/typescript/lib/lib.d.ts'));
+        var src = es.merge(gulp.src('src/**', { base: 'src' }), gulp.src('node_modules/typescript/lib/lib.d.ts'), gulp.src('node_modules/@types/**/index.d.ts'));
         var watchSrc = watch('src/**', { base: 'src' });
         return watchSrc
             .pipe(util.incremental(compile, src, true))

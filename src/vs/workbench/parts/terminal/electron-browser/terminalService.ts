@@ -4,23 +4,25 @@
  *--------------------------------------------------------------------------------------------*/
 
 import Event, { Emitter } from 'vs/base/common/event';
+import * as errors from 'vs/base/common/errors';
 import platform = require('vs/base/common/platform');
 import { IContextKeyService, IContextKey } from 'vs/platform/contextkey/common/contextkey';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { IPanelService } from 'vs/workbench/services/panel/common/panelService';
 import { IPartService } from 'vs/workbench/services/part/common/partService';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { ITerminalInstance, ITerminalService, IShell, KEYBINDING_CONTEXT_TERMINAL_FOCUS, TERMINAL_PANEL_ID } from 'vs/workbench/parts/terminal/common/terminal';
-import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
+import { ITerminalInstance, ITerminalService, IShellLaunchConfig, KEYBINDING_CONTEXT_TERMINAL_FOCUS, TERMINAL_PANEL_ID } from 'vs/workbench/parts/terminal/common/terminal';
 import { TPromise } from 'vs/base/common/winjs.base';
 import { TerminalConfigHelper } from 'vs/workbench/parts/terminal/electron-browser/terminalConfigHelper';
 import { TerminalInstance } from 'vs/workbench/parts/terminal/electron-browser/terminalInstance';
+import { TerminalLinkHandler } from 'vs/workbench/parts/terminal/electron-browser/terminalLinkHandler';
 
 export class TerminalService implements ITerminalService {
 	public _serviceBrand: any;
 
 	private _activeTerminalInstanceIndex: number;
 	private _configHelper: TerminalConfigHelper;
+	private _linkHandler: TerminalLinkHandler;
 	private _onActiveInstanceChanged: Emitter<string>;
 	private _onInstanceDisposed: Emitter<ITerminalInstance>;
 	private _onInstanceProcessIdReady: Emitter<ITerminalInstance>;
@@ -44,8 +46,7 @@ export class TerminalService implements ITerminalService {
 		@IConfigurationService private _configurationService: IConfigurationService,
 		@IInstantiationService private _instantiationService: IInstantiationService,
 		@IPanelService private _panelService: IPanelService,
-		@IPartService private _partService: IPartService,
-		@IWorkspaceContextService private _workspaceContextService: IWorkspaceContextService
+		@IPartService private _partService: IPartService
 	) {
 		this._terminalInstances = [];
 		this._activeTerminalInstanceIndex = 0;
@@ -56,26 +57,22 @@ export class TerminalService implements ITerminalService {
 		this._onInstanceTitleChanged = new Emitter<string>();
 		this._onInstancesChanged = new Emitter<string>();
 
-		this._configurationService.onDidUpdateConfiguration(this.updateConfig.bind(this));
+		this._configurationService.onDidUpdateConfiguration(() => this.updateConfig());
 		this._terminalFocusContextKey = KEYBINDING_CONTEXT_TERMINAL_FOCUS.bindTo(this._contextKeyService);
-		this._configHelper = <TerminalConfigHelper>this._instantiationService.createInstance(TerminalConfigHelper, platform.platform);
+		this._configHelper = this._instantiationService.createInstance(TerminalConfigHelper, platform.platform);
+		this._linkHandler = this._instantiationService.createInstance(TerminalLinkHandler, platform.platform);
 		this.onInstanceDisposed((terminalInstance) => { this._removeInstance(terminalInstance); });
 	}
 
-	public createInstance(name?: string, shellPath?: string, shellArgs?: string[]): ITerminalInstance {
-		let shell: IShell = {
-			executable: shellPath,
-			args: shellArgs
-		};
-		let terminalInstance = <TerminalInstance>this._instantiationService.createInstance(TerminalInstance,
+	public createInstance(shell: IShellLaunchConfig = {}): ITerminalInstance {
+		let terminalInstance = this._instantiationService.createInstance(TerminalInstance,
 			this._terminalFocusContextKey,
 			this._configHelper,
+			this._linkHandler,
 			this._terminalContainer,
-			this._workspaceContextService.getWorkspace(),
-			name,
 			shell);
 		terminalInstance.addDisposable(terminalInstance.onTitleChanged(this._onInstanceTitleChanged.fire, this._onInstanceTitleChanged));
-		terminalInstance.addDisposable(terminalInstance.onClosed(this._onInstanceDisposed.fire, this._onInstanceDisposed));
+		terminalInstance.addDisposable(terminalInstance.onDisposed(this._onInstanceDisposed.fire, this._onInstanceDisposed));
 		terminalInstance.addDisposable(terminalInstance.onProcessIdReady(this._onInstanceProcessIdReady.fire, this._onInstanceProcessIdReady));
 		this.terminalInstances.push(terminalInstance);
 		if (this.terminalInstances.length === 1) {
@@ -128,6 +125,9 @@ export class TerminalService implements ITerminalService {
 	}
 
 	public setActiveInstanceByIndex(terminalIndex: number): void {
+		if (terminalIndex >= this._terminalInstances.length) {
+			return;
+		}
 		const didInstanceChange = this._activeTerminalInstanceIndex !== terminalIndex;
 		this._activeTerminalInstanceIndex = terminalIndex;
 		this._terminalInstances.forEach((terminalInstance, i) => {
@@ -185,13 +185,14 @@ export class TerminalService implements ITerminalService {
 				}
 				complete(void 0);
 			}
+			return undefined;
 		});
 	}
 
 	public hidePanel(): void {
 		const panel = this._panelService.getActivePanel();
 		if (panel && panel.getId() === TERMINAL_PANEL_ID) {
-			this._partService.setPanelHidden(true);
+			this._partService.setPanelHidden(true).done(undefined, errors.onUnexpectedError);
 		}
 	}
 
@@ -209,10 +210,6 @@ export class TerminalService implements ITerminalService {
 	}
 
 	public updateConfig(): void {
-		this.terminalInstances.forEach((terminalInstance) => {
-			terminalInstance.setCursorBlink(this.configHelper.getCursorBlink());
-			terminalInstance.setCommandsToSkipShell(this.configHelper.getCommandsToSkipShell());
-			terminalInstance.setScrollback(this.configHelper.getScrollback());
-		});
+		this.terminalInstances.forEach(instance => instance.updateConfig());
 	}
 }

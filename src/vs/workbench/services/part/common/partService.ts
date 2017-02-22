@@ -23,7 +23,6 @@ export enum Position {
 }
 
 export interface ILayoutOptions {
-	forceStyleRecompute?: boolean;
 	toggleMaximizedPanel?: boolean;
 }
 
@@ -36,6 +35,11 @@ export interface IPartService {
 	 * Emits when the visibility of the title bar changes.
 	 */
 	onTitleBarVisibilityChange: Event<void>;
+
+	/**
+	 * Emits when the editor part's layout changes.
+	 */
+	onEditorLayout: Event<void>;
 
 	/**
 	 * Asks the part service to layout all parts.
@@ -80,12 +84,12 @@ export interface IPartService {
 	/**
 	 * Set sidebar hidden or not
 	 */
-	setSideBarHidden(hidden: boolean): void;
+	setSideBarHidden(hidden: boolean): TPromise<void>;
 
 	/**
 	 * Set panel part hidden or not
 	 */
-	setPanelHidden(hidden: boolean): void;
+	setPanelHidden(hidden: boolean): TPromise<void>;
 
 	/**
 	 * Maximizes the panel height if the panel is not already maximized.

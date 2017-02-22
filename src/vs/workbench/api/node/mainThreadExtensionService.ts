@@ -6,7 +6,7 @@
 
 import Severity from 'vs/base/common/severity';
 import { TPromise } from 'vs/base/common/winjs.base';
-import pkg from 'vs/platform/package';
+import pkg from 'vs/platform/node/package';
 import { localize } from 'vs/nls';
 import * as path from 'path';
 import URI from 'vs/base/common/uri';
@@ -59,6 +59,8 @@ export class MainProcessExtensionService extends AbstractExtensionService<Activa
 	 * This class is constructed manually because it is a service, so it doesn't use any ctor injection
 	 */
 	constructor(
+		// TODO@Joao: remove!
+		forcedDisabledExtensions: string[],
 		@IThreadService threadService: IThreadService,
 		@IMessageService messageService: IMessageService,
 		@IEnvironmentService private environmentService: IEnvironmentService,
@@ -72,7 +74,12 @@ export class MainProcessExtensionService extends AbstractExtensionService<Activa
 		this._proxy = this._threadService.get(ExtHostContext.ExtHostExtensionService);
 		this._extensionsStatus = {};
 
-		const disabledExtensions = [...extensionEnablementService.getGloballyDisabledExtensions(), ...extensionEnablementService.getWorkspaceDisabledExtensions()];
+		const disabledExtensions = [
+			...forcedDisabledExtensions,
+			...extensionEnablementService.getGloballyDisabledExtensions(),
+			...extensionEnablementService.getWorkspaceDisabledExtensions()
+		];
+
 		this.scanExtensions().done(extensionDescriptions => {
 			this._onExtensionDescriptions(disabledExtensions.length ? extensionDescriptions.filter(e => disabledExtensions.indexOf(`${e.publisher}.${e.name}`) === -1) : extensionDescriptions);
 		});

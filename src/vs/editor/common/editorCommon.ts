@@ -10,8 +10,8 @@ import * as types from 'vs/base/common/types';
 import URI from 'vs/base/common/uri';
 import { TPromise } from 'vs/base/common/winjs.base';
 import { ServicesAccessor, IConstructorSignature1 } from 'vs/platform/instantiation/common/instantiation';
-import { IMode } from 'vs/editor/common/modes';
-import { LineTokens, StandardTokenType } from 'vs/editor/common/core/lineTokens';
+import { LanguageId, LanguageIdentifier, StandardTokenType } from 'vs/editor/common/modes';
+import { LineTokens } from 'vs/editor/common/core/lineTokens';
 import { ScrollbarVisibility } from 'vs/base/common/scrollable';
 import { IDisposable } from 'vs/base/common/lifecycle';
 import { Position } from 'vs/editor/common/core/position';
@@ -20,6 +20,7 @@ import { Selection } from 'vs/editor/common/core/selection';
 import { IndentRange } from 'vs/editor/common/model/indentRanges';
 import { ICommandHandlerDescription } from 'vs/platform/commands/common/commands';
 import { ContextKeyExpr, RawContextKey } from 'vs/platform/contextkey/common/contextkey';
+import { FontInfo } from 'vs/editor/common/config/fontInfo';
 
 /**
  * @internal
@@ -152,6 +153,18 @@ export interface IEditorScrollbarOptions {
 	horizontalSliderSize?: number;
 }
 
+
+/**
+ * Configuration options for editor minimap
+ */
+export interface IEditorMinimapOptions {
+	/**
+	 * Enable the rendering of the minimap.
+	 * Defaults to false.
+	 */
+	enabled?: boolean;
+}
+
 /**
  * Describes how to indent wrapped lines.
  */
@@ -242,10 +255,9 @@ export interface IEditorOptions {
 	 */
 	roundedSelection?: boolean;
 	/**
-	 * Theme to be used for rendering. Consists of two parts, the UI theme and the syntax theme,
-	 * separated by a space.
-	 * The current available UI themes are: 'vs' (default), 'vs-dark', 'hc-black'
-	 * The syntax themes are contributed. The default is 'default-theme'
+	 * Theme to be used for rendering.
+	 * The current out-of-the-box available themes are: 'vs' (default), 'vs-dark', 'hc-black'.
+	 * You can create custom themes via `monaco.editor.defineTheme`.
 	 */
 	theme?: string;
 	/**
@@ -257,6 +269,10 @@ export interface IEditorOptions {
 	 * Control the behavior and rendering of the scrollbars.
 	 */
 	scrollbar?: IEditorScrollbarOptions;
+	/**
+	 * Control the behavior and rendering of the minimap.
+	 */
+	minimap?: IEditorMinimapOptions;
 	/**
 	 * Display overflow widgets as `fixed`.
 	 * Defaults to `false`.
@@ -292,6 +308,11 @@ export interface IEditorOptions {
 	 * Defaults to false.
 	 */
 	disableTranslate3d?: boolean;
+	/**
+	 * Disable the optimizations for monospace fonts.
+	 * Defaults to false.
+	 */
+	disableMonospaceOptimizations?: boolean;
 	/**
 	 * Should the cursor be hidden in the overview ruler.
 	 * Defaults to false.
@@ -394,6 +415,16 @@ export interface IEditorOptions {
 	 */
 	formatOnType?: boolean;
 	/**
+	 * Enable format on paste.
+	 * Defaults to false.
+	 */
+	formatOnPaste?: boolean;
+	/**
+	 * Controls if the editor should allow to move selections via drag and drop.
+	 * Defaults to false.
+	 */
+	enableDragAndDrop?: boolean;
+	/**
 	 * Enable the suggestion box to pop-up on trigger characters.
 	 * Defaults to true.
 	 */
@@ -404,6 +435,11 @@ export interface IEditorOptions {
 	 */
 	acceptSuggestionOnEnter?: boolean;
 	/**
+	 * Accept suggestions on provider defined characters.
+	 * Defaults to true.
+	 */
+	acceptSuggestionOnCommitCharacter?: boolean;
+	/**
 	 * Enable snippet suggestions. Default to 'true'.
 	 */
 	snippetSuggestions?: 'top' | 'bottom' | 'inline' | 'none';
@@ -411,10 +447,6 @@ export interface IEditorOptions {
 	 * Copying without a selection copies the current line.
 	 */
 	emptySelectionClipboard?: boolean;
-	/**
-	 * Enable tab completion. Defaults to 'false'
-	 */
-	tabCompletion?: boolean;
 	/**
 	 * Enable word based suggestions. Defaults to 'true'
 	 */
@@ -449,6 +481,11 @@ export interface IEditorOptions {
 	 * Defaults to true in vscode and to false in monaco-editor.
 	 */
 	folding?: boolean;
+	/**
+	 * Enable highlighting of matching brackets.
+	 * Defaults to true.
+	 */
+	matchBrackets?: boolean;
 	/**
 	 * Enable rendering of whitespace.
 	 * Defaults to none.
@@ -597,6 +634,37 @@ export class InternalEditorScrollbarOptions {
 	}
 }
 
+export class InternalEditorMinimapOptions {
+	readonly _internalEditorMinimapOptionsBrand: void;
+
+	readonly enabled: boolean;
+
+	/**
+	 * @internal
+	 */
+	constructor(source: {
+		enabled: boolean;
+	}) {
+		this.enabled = Boolean(source.enabled);
+	}
+
+	/**
+	 * @internal
+	 */
+	public equals(other: InternalEditorMinimapOptions): boolean {
+		return (
+			this.enabled === other.enabled
+		);
+	}
+
+	/**
+	 * @internal
+	 */
+	public clone(): InternalEditorMinimapOptions {
+		return new InternalEditorMinimapOptions(this);
+	}
+}
+
 export class EditorWrappingInfo {
 	readonly _editorWrappingInfoBrand: void;
 
@@ -653,6 +721,7 @@ export class InternalEditorViewOptions {
 
 	readonly theme: string;
 	readonly canUseTranslate3d: boolean;
+	readonly disableMonospaceOptimizations: boolean;
 	readonly experimentalScreenReader: boolean;
 	readonly rulers: number[];
 	readonly ariaLabel: string;
@@ -676,6 +745,7 @@ export class InternalEditorViewOptions {
 	readonly renderIndentGuides: boolean;
 	readonly renderLineHighlight: 'none' | 'gutter' | 'line' | 'all';
 	readonly scrollbar: InternalEditorScrollbarOptions;
+	readonly minimap: InternalEditorMinimapOptions;
 	readonly fixedOverflowWidgets: boolean;
 
 	/**
@@ -684,6 +754,7 @@ export class InternalEditorViewOptions {
 	constructor(source: {
 		theme: string;
 		canUseTranslate3d: boolean;
+		disableMonospaceOptimizations: boolean;
 		experimentalScreenReader: boolean;
 		rulers: number[];
 		ariaLabel: string;
@@ -707,10 +778,12 @@ export class InternalEditorViewOptions {
 		renderIndentGuides: boolean;
 		renderLineHighlight: 'none' | 'gutter' | 'line' | 'all';
 		scrollbar: InternalEditorScrollbarOptions;
+		minimap: InternalEditorMinimapOptions;
 		fixedOverflowWidgets: boolean;
 	}) {
 		this.theme = String(source.theme);
 		this.canUseTranslate3d = Boolean(source.canUseTranslate3d);
+		this.disableMonospaceOptimizations = Boolean(source.disableMonospaceOptimizations);
 		this.experimentalScreenReader = Boolean(source.experimentalScreenReader);
 		this.rulers = InternalEditorViewOptions._toSortedIntegerArray(source.rulers);
 		this.ariaLabel = String(source.ariaLabel);
@@ -734,6 +807,7 @@ export class InternalEditorViewOptions {
 		this.renderIndentGuides = Boolean(source.renderIndentGuides);
 		this.renderLineHighlight = source.renderLineHighlight;
 		this.scrollbar = source.scrollbar.clone();
+		this.minimap = source.minimap.clone();
 		this.fixedOverflowWidgets = Boolean(source.fixedOverflowWidgets);
 	}
 
@@ -772,6 +846,7 @@ export class InternalEditorViewOptions {
 		return (
 			this.theme === other.theme
 			&& this.canUseTranslate3d === other.canUseTranslate3d
+			&& this.disableMonospaceOptimizations === other.disableMonospaceOptimizations
 			&& this.experimentalScreenReader === other.experimentalScreenReader
 			&& InternalEditorViewOptions._numberArraysEqual(this.rulers, other.rulers)
 			&& this.ariaLabel === other.ariaLabel
@@ -795,6 +870,7 @@ export class InternalEditorViewOptions {
 			&& this.renderIndentGuides === other.renderIndentGuides
 			&& this.renderLineHighlight === other.renderLineHighlight
 			&& this.scrollbar.equals(other.scrollbar)
+			&& this.minimap.equals(other.minimap)
 			&& this.fixedOverflowWidgets === other.fixedOverflowWidgets
 		);
 	}
@@ -806,6 +882,7 @@ export class InternalEditorViewOptions {
 		return {
 			theme: this.theme !== newOpts.theme,
 			canUseTranslate3d: this.canUseTranslate3d !== newOpts.canUseTranslate3d,
+			disableMonospaceOptimizations: this.disableMonospaceOptimizations !== newOpts.disableMonospaceOptimizations,
 			experimentalScreenReader: this.experimentalScreenReader !== newOpts.experimentalScreenReader,
 			rulers: (!InternalEditorViewOptions._numberArraysEqual(this.rulers, newOpts.rulers)),
 			ariaLabel: this.ariaLabel !== newOpts.ariaLabel,
@@ -829,6 +906,7 @@ export class InternalEditorViewOptions {
 			renderIndentGuides: this.renderIndentGuides !== newOpts.renderIndentGuides,
 			renderLineHighlight: this.renderLineHighlight !== newOpts.renderLineHighlight,
 			scrollbar: (!this.scrollbar.equals(newOpts.scrollbar)),
+			minimap: (!this.minimap.equals(newOpts.minimap)),
 			fixedOverflowWidgets: this.fixedOverflowWidgets !== newOpts.fixedOverflowWidgets
 		};
 	}
@@ -844,6 +922,7 @@ export class InternalEditorViewOptions {
 export interface IViewConfigurationChangedEvent {
 	readonly theme: boolean;
 	readonly canUseTranslate3d: boolean;
+	readonly disableMonospaceOptimizations: boolean;
 	readonly experimentalScreenReader: boolean;
 	readonly rulers: boolean;
 	readonly ariaLabel: boolean;
@@ -867,6 +946,7 @@ export interface IViewConfigurationChangedEvent {
 	readonly renderIndentGuides: boolean;
 	readonly renderLineHighlight: boolean;
 	readonly scrollbar: boolean;
+	readonly minimap: boolean;
 	readonly fixedOverflowWidgets: boolean;
 }
 
@@ -879,17 +959,19 @@ export class EditorContribOptions {
 	readonly parameterHints: boolean;
 	readonly iconsInSuggestions: boolean;
 	readonly formatOnType: boolean;
+	readonly formatOnPaste: boolean;
 	readonly suggestOnTriggerCharacters: boolean;
 	readonly acceptSuggestionOnEnter: boolean;
+	readonly acceptSuggestionOnCommitCharacter: boolean;
 	readonly snippetSuggestions: 'top' | 'bottom' | 'inline' | 'none';
 	readonly emptySelectionClipboard: boolean;
-	readonly tabCompletion: boolean;
 	readonly wordBasedSuggestions: boolean;
 	readonly suggestFontSize: number;
 	readonly suggestLineHeight: number;
 	readonly selectionHighlight: boolean;
 	readonly codeLens: boolean;
 	readonly folding: boolean;
+	readonly matchBrackets: boolean;
 
 	/**
 	 * @internal
@@ -903,17 +985,19 @@ export class EditorContribOptions {
 		parameterHints: boolean;
 		iconsInSuggestions: boolean;
 		formatOnType: boolean;
+		formatOnPaste: boolean;
 		suggestOnTriggerCharacters: boolean;
 		acceptSuggestionOnEnter: boolean;
+		acceptSuggestionOnCommitCharacter: boolean;
 		snippetSuggestions: 'top' | 'bottom' | 'inline' | 'none';
 		emptySelectionClipboard: boolean;
-		tabCompletion: boolean;
 		wordBasedSuggestions: boolean;
 		suggestFontSize: number;
 		suggestLineHeight: number;
 		selectionHighlight: boolean;
 		codeLens: boolean;
 		folding: boolean;
+		matchBrackets: boolean;
 	}) {
 		this.selectionClipboard = Boolean(source.selectionClipboard);
 		this.hover = Boolean(source.hover);
@@ -923,17 +1007,19 @@ export class EditorContribOptions {
 		this.parameterHints = Boolean(source.parameterHints);
 		this.iconsInSuggestions = Boolean(source.iconsInSuggestions);
 		this.formatOnType = Boolean(source.formatOnType);
+		this.formatOnPaste = Boolean(source.formatOnPaste);
 		this.suggestOnTriggerCharacters = Boolean(source.suggestOnTriggerCharacters);
 		this.acceptSuggestionOnEnter = Boolean(source.acceptSuggestionOnEnter);
+		this.acceptSuggestionOnCommitCharacter = Boolean(source.acceptSuggestionOnCommitCharacter);
 		this.snippetSuggestions = source.snippetSuggestions;
 		this.emptySelectionClipboard = source.emptySelectionClipboard;
-		this.tabCompletion = source.tabCompletion;
 		this.wordBasedSuggestions = source.wordBasedSuggestions;
 		this.suggestFontSize = source.suggestFontSize;
 		this.suggestLineHeight = source.suggestLineHeight;
 		this.selectionHighlight = Boolean(source.selectionHighlight);
 		this.codeLens = Boolean(source.codeLens);
 		this.folding = Boolean(source.folding);
+		this.matchBrackets = Boolean(source.matchBrackets);
 	}
 
 	/**
@@ -949,17 +1035,19 @@ export class EditorContribOptions {
 			&& this.parameterHints === other.parameterHints
 			&& this.iconsInSuggestions === other.iconsInSuggestions
 			&& this.formatOnType === other.formatOnType
+			&& this.formatOnPaste === other.formatOnPaste
 			&& this.suggestOnTriggerCharacters === other.suggestOnTriggerCharacters
 			&& this.acceptSuggestionOnEnter === other.acceptSuggestionOnEnter
+			&& this.acceptSuggestionOnCommitCharacter === other.acceptSuggestionOnCommitCharacter
 			&& this.snippetSuggestions === other.snippetSuggestions
 			&& this.emptySelectionClipboard === other.emptySelectionClipboard
-			&& this.tabCompletion === other.tabCompletion
 			&& this.wordBasedSuggestions === other.wordBasedSuggestions
 			&& this.suggestFontSize === other.suggestFontSize
 			&& this.suggestLineHeight === other.suggestLineHeight
 			&& this.selectionHighlight === other.selectionHighlight
 			&& this.codeLens === other.codeLens
 			&& this.folding === other.folding
+			&& this.matchBrackets === other.matchBrackets
 		);
 	}
 
@@ -985,6 +1073,7 @@ export class InternalEditorOptions {
 	readonly autoClosingBrackets: boolean;
 	readonly useTabStops: boolean;
 	readonly tabFocusMode: boolean;
+	readonly enableDragAndDrop: boolean;
 	// ---- grouped options
 	readonly layoutInfo: EditorLayoutInfo;
 	readonly fontInfo: FontInfo;
@@ -1002,6 +1091,7 @@ export class InternalEditorOptions {
 		autoClosingBrackets: boolean;
 		useTabStops: boolean;
 		tabFocusMode: boolean;
+		enableDragAndDrop: boolean;
 		layoutInfo: EditorLayoutInfo;
 		fontInfo: FontInfo;
 		viewInfo: InternalEditorViewOptions;
@@ -1014,6 +1104,7 @@ export class InternalEditorOptions {
 		this.autoClosingBrackets = Boolean(source.autoClosingBrackets);
 		this.useTabStops = Boolean(source.useTabStops);
 		this.tabFocusMode = Boolean(source.tabFocusMode);
+		this.enableDragAndDrop = Boolean(source.enableDragAndDrop);
 		this.layoutInfo = source.layoutInfo.clone();
 		this.fontInfo = source.fontInfo.clone();
 		this.viewInfo = source.viewInfo.clone();
@@ -1032,6 +1123,7 @@ export class InternalEditorOptions {
 			&& this.autoClosingBrackets === other.autoClosingBrackets
 			&& this.useTabStops === other.useTabStops
 			&& this.tabFocusMode === other.tabFocusMode
+			&& this.enableDragAndDrop === other.enableDragAndDrop
 			&& this.layoutInfo.equals(other.layoutInfo)
 			&& this.fontInfo.equals(other.fontInfo)
 			&& this.viewInfo.equals(other.viewInfo)
@@ -1051,6 +1143,7 @@ export class InternalEditorOptions {
 			autoClosingBrackets: (this.autoClosingBrackets !== newOpts.autoClosingBrackets),
 			useTabStops: (this.useTabStops !== newOpts.useTabStops),
 			tabFocusMode: (this.tabFocusMode !== newOpts.tabFocusMode),
+			enableDragAndDrop: (this.enableDragAndDrop !== newOpts.enableDragAndDrop),
 			layoutInfo: (!this.layoutInfo.equals(newOpts.layoutInfo)),
 			fontInfo: (!this.fontInfo.equals(newOpts.fontInfo)),
 			viewInfo: this.viewInfo.createChangeEvent(newOpts.viewInfo),
@@ -1077,6 +1170,7 @@ export interface IConfigurationChangedEvent {
 	readonly autoClosingBrackets: boolean;
 	readonly useTabStops: boolean;
 	readonly tabFocusMode: boolean;
+	readonly enableDragAndDrop: boolean;
 	readonly layoutInfo: boolean;
 	readonly fontInfo: boolean;
 	readonly viewInfo: IViewConfigurationChangedEvent;
@@ -1129,9 +1223,8 @@ export interface IModelDecorationOptions {
 	className?: string;
 	/**
 	 * Message to be rendered when hovering over the glyph margin decoration.
-	 * @internal
 	 */
-	glyphMarginHoverMessage?: string;
+	glyphMarginHoverMessage?: MarkedString | MarkedString[];
 	/**
 	 * Array of MarkedString to render as the decoration message.
 	 */
@@ -1294,7 +1387,7 @@ export interface IWordRange {
  * @internal
  */
 export interface ITokenInfo {
-	readonly standardType: StandardTokenType;
+	readonly type: StandardTokenType;
 	readonly lineNumber: number;
 	readonly startColumn: number;
 	readonly endColumn: number;
@@ -1566,6 +1659,11 @@ export interface ITextModel {
 	 */
 	mightContainRTL(): boolean;
 
+	/**
+	 * @internal
+	 */
+	mightContainNonBasicASCII(): boolean;
+
 	getOptions(): TextModelResolvedOptions;
 
 	/**
@@ -1589,8 +1687,9 @@ export interface ITextModel {
 
 	/**
 	 * Replace the entire text buffer value contained in this model.
+	 * @internal
 	 */
-	setValueFromRawText(newValue: IRawText): void;
+	setValueFromRawText(newValue: ITextSource): void;
 
 	/**
 	 * Get the text stored in this model.
@@ -1607,13 +1706,15 @@ export interface ITextModel {
 
 	/**
 	 * Get the raw text stored in this model.
+	 * @internal
 	 */
 	toRawText(): IRawText;
 
 	/**
 	 * Check if the raw text stored in this model equals another raw text.
+	 * @internal
 	 */
-	equals(other: IRawText): boolean;
+	equals(other: ITextSource): boolean;
 
 	/**
 	 * Get the text in a certain range.
@@ -1773,10 +1874,11 @@ export interface ITextModel {
 	 * @param isRegex Used to indicate that `searchString` is a regular expression.
 	 * @param matchCase Force the matching to match lower/upper case exactly.
 	 * @param wholeWord Force the matching to match entire words only.
+	 * @param captureMatches The result will contain the captured groups.
 	 * @param limitResultCount Limit the number of results
 	 * @return The ranges where the matches are. It is empty if not matches have been found.
 	 */
-	findMatches(searchString: string, searchOnlyEditableRange: boolean, isRegex: boolean, matchCase: boolean, wholeWord: boolean, limitResultCount?: number): Range[];
+	findMatches(searchString: string, searchOnlyEditableRange: boolean, isRegex: boolean, matchCase: boolean, wholeWord: boolean, captureMatches: boolean, limitResultCount?: number): FindMatch[];
 	/**
 	 * Search the model.
 	 * @param searchString The string used to search. If it is a regular expression, set `isRegex` to true.
@@ -1784,10 +1886,11 @@ export interface ITextModel {
 	 * @param isRegex Used to indicate that `searchString` is a regular expression.
 	 * @param matchCase Force the matching to match lower/upper case exactly.
 	 * @param wholeWord Force the matching to match entire words only.
+	 * @param captureMatches The result will contain the captured groups.
 	 * @param limitResultCount Limit the number of results
 	 * @return The ranges where the matches are. It is empty if no matches have been found.
 	 */
-	findMatches(searchString: string, searchScope: IRange, isRegex: boolean, matchCase: boolean, wholeWord: boolean, limitResultCount?: number): Range[];
+	findMatches(searchString: string, searchScope: IRange, isRegex: boolean, matchCase: boolean, wholeWord: boolean, captureMatches: boolean, limitResultCount?: number): FindMatch[];
 	/**
 	 * Search the model for the next match. Loops to the beginning of the model if needed.
 	 * @param searchString The string used to search. If it is a regular expression, set `isRegex` to true.
@@ -1795,9 +1898,10 @@ export interface ITextModel {
 	 * @param isRegex Used to indicate that `searchString` is a regular expression.
 	 * @param matchCase Force the matching to match lower/upper case exactly.
 	 * @param wholeWord Force the matching to match entire words only.
+	 * @param captureMatches The result will contain the captured groups.
 	 * @return The range where the next match is. It is null if no next match has been found.
 	 */
-	findNextMatch(searchString: string, searchStart: IPosition, isRegex: boolean, matchCase: boolean, wholeWord: boolean): Range;
+	findNextMatch(searchString: string, searchStart: IPosition, isRegex: boolean, matchCase: boolean, wholeWord: boolean, captureMatches: boolean): FindMatch;
 	/**
 	 * Search the model for the previous match. Loops to the end of the model if needed.
 	 * @param searchString The string used to search. If it is a regular expression, set `isRegex` to true.
@@ -1805,9 +1909,25 @@ export interface ITextModel {
 	 * @param isRegex Used to indicate that `searchString` is a regular expression.
 	 * @param matchCase Force the matching to match lower/upper case exactly.
 	 * @param wholeWord Force the matching to match entire words only.
+	 * @param captureMatches The result will contain the captured groups.
 	 * @return The range where the previous match is. It is null if no previous match has been found.
 	 */
-	findPreviousMatch(searchString: string, searchStart: IPosition, isRegex: boolean, matchCase: boolean, wholeWord: boolean): Range;
+	findPreviousMatch(searchString: string, searchStart: IPosition, isRegex: boolean, matchCase: boolean, wholeWord: boolean, captureMatches: boolean): FindMatch;
+}
+
+export class FindMatch {
+	_findMatchBrand: void;
+
+	public readonly range: Range;
+	public readonly matches: string[];
+
+	/**
+	 * @internal
+	 */
+	constructor(range: Range, matches: string[]) {
+		this.range = range;
+		this.matches = matches;
+	}
 }
 
 export interface IReadOnlyModel extends ITextModel {
@@ -1815,6 +1935,12 @@ export interface IReadOnlyModel extends ITextModel {
 	 * Gets the resource associated with this editor model.
 	 */
 	readonly uri: URI;
+
+	/**
+	 * Get the language associated with this model.
+	 * @internal
+	 */
+	getLanguageIdentifier(): LanguageIdentifier;
 
 	/**
 	 * Get the language associated with this model.
@@ -1862,9 +1988,10 @@ export interface ITokenizedModel extends ITextModel {
 	getLineTokens(lineNumber: number, inaccurateTokensAcceptable?: boolean): LineTokens;
 
 	/**
-	 * Get the current language mode associated with the model.
+	 * Get the language associated with this model.
+	 * @internal
 	 */
-	getMode(): IMode;
+	getLanguageIdentifier(): LanguageIdentifier;
 
 	/**
 	 * Get the language associated with this model.
@@ -1875,13 +2002,13 @@ export interface ITokenizedModel extends ITextModel {
 	 * Set the current language mode associated with the model.
 	 * @internal
 	 */
-	setMode(languageId: string): void;
+	setMode(languageIdentifier: LanguageIdentifier): void;
 
 	/**
 	 * Returns the true (inner-most) language mode at a given position.
 	 * @internal
 	 */
-	getModeIdAtPosition(lineNumber: number, column: number): string;
+	getLanguageIdAtPosition(lineNumber: number, column: number): LanguageId;
 
 	/**
 	 * Get the word under or besides `position`.
@@ -2173,7 +2300,7 @@ export interface IModel extends IReadOnlyModel, IEditableTextModel, ITextModelWi
 	 * An event emitted when the language associated with the model has changed.
 	 * @event
 	 */
-	onDidChangeMode(listener: (e: IModelModeChangedEvent) => void): IDisposable;
+	onDidChangeLanguage(listener: (e: IModelLanguageChangedEvent) => void): IDisposable;
 	/**
 	 * An event emitted right before disposing the model.
 	 * @event
@@ -2223,15 +2350,15 @@ export interface IModel extends IReadOnlyModel, IEditableTextModel, ITextModelWi
 /**
  * An event describing that the current mode associated with a model has changed.
  */
-export interface IModelModeChangedEvent {
+export interface IModelLanguageChangedEvent {
 	/**
-	 * Previous mode
+	 * Previous language
 	 */
-	readonly oldMode: IMode;
+	readonly oldLanguage: string;
 	/**
-	 * New mode
+	 * New language
 	 */
-	readonly newMode: IMode;
+	readonly newLanguage: string;
 }
 
 /**
@@ -2296,8 +2423,9 @@ export interface IModelContentChangedEvent {
 
 /**
  * The raw text backing a model.
+ * @internal
  */
-export interface IRawText {
+export interface ITextSource {
 	/**
 	 * The entire text length.
 	 */
@@ -2318,6 +2446,48 @@ export interface IRawText {
 	 * The text contains Unicode characters classified as "R" or "AL".
 	 */
 	readonly containsRTL: boolean;
+	/**
+	 * The text contains only characters inside the ASCII range 32-126 or \t \r \n
+	 */
+	readonly isBasicASCII: boolean;
+}
+
+/**
+ * The text source
+ * @internal
+ */
+export interface ITextSource2 {
+	/**
+	 * The entire text length.
+	 */
+	readonly length: number;
+	/**
+	 * The text split into lines.
+	 */
+	readonly lines: string[];
+	/**
+	 * The BOM (leading character sequence of the file).
+	 */
+	readonly BOM: string;
+	/**
+	 * The number of lines ending with '\r\n'
+	 */
+	readonly totalCRCount: number;
+	/**
+	 * The text contains Unicode characters classified as "R" or "AL".
+	 */
+	readonly containsRTL: boolean;
+	/**
+	 * The text contains only characters inside the ASCII range 32-126 or \t \r \n
+	 */
+	readonly isBasicASCII: boolean;
+}
+
+/**
+ * The raw text backing a model.
+ * @internal
+ */
+export interface IRawText extends ITextSource {
 	/**
 	 * The options associated with this text.
 	 */
@@ -2638,6 +2808,12 @@ export class OverviewRulerPosition {
 	}
 }
 
+export enum RenderMinimap {
+	None = 0,
+	Small = 1,
+	Large = 2
+}
+
 /**
  * The internal layout details of the editor.
  */
@@ -2706,6 +2882,21 @@ export class EditorLayoutInfo {
 	readonly contentHeight: number;
 
 	/**
+	 * The width of the minimap
+	 */
+	readonly minimapWidth: number;
+
+	/**
+	 * Minimap render type
+	 */
+	readonly renderMinimap: RenderMinimap;
+
+	/**
+	 * The number of columns (of typical characters) fitting on a viewport line.
+	 */
+	readonly viewportColumn: number;
+
+	/**
 	 * The width of the vertical scrollbar.
 	 */
 	readonly verticalScrollbarWidth: number;
@@ -2737,6 +2928,9 @@ export class EditorLayoutInfo {
 		contentLeft: number;
 		contentWidth: number;
 		contentHeight: number;
+		renderMinimap: RenderMinimap;
+		minimapWidth: number;
+		viewportColumn: number;
 		verticalScrollbarWidth: number;
 		horizontalScrollbarHeight: number;
 		overviewRuler: OverviewRulerPosition;
@@ -2755,6 +2949,9 @@ export class EditorLayoutInfo {
 		this.contentLeft = source.contentLeft | 0;
 		this.contentWidth = source.contentWidth | 0;
 		this.contentHeight = source.contentHeight | 0;
+		this.renderMinimap = source.renderMinimap | 0;
+		this.minimapWidth = source.minimapWidth | 0;
+		this.viewportColumn = source.viewportColumn | 0;
 		this.verticalScrollbarWidth = source.verticalScrollbarWidth | 0;
 		this.horizontalScrollbarHeight = source.horizontalScrollbarHeight | 0;
 		this.overviewRuler = source.overviewRuler.clone();
@@ -2779,6 +2976,9 @@ export class EditorLayoutInfo {
 			&& this.contentLeft === other.contentLeft
 			&& this.contentWidth === other.contentWidth
 			&& this.contentHeight === other.contentHeight
+			&& this.renderMinimap === other.renderMinimap
+			&& this.minimapWidth === other.minimapWidth
+			&& this.viewportColumn === other.viewportColumn
 			&& this.verticalScrollbarWidth === other.verticalScrollbarWidth
 			&& this.horizontalScrollbarHeight === other.horizontalScrollbarHeight
 			&& this.overviewRuler.equals(other.overviewRuler)
@@ -3040,6 +3240,14 @@ export namespace ModeContextKeys {
 	/**
 	 * @internal
 	 */
+	export const hasImplementationProvider = new RawContextKey<boolean>('editorHasImplementationProvider', undefined);
+	/**
+	 * @internal
+	 */
+	export const hasTypeDefinitionProvider = new RawContextKey<boolean>('editorHasTypeDefinitionProvider', undefined);
+	/**
+	 * @internal
+	 */
 	export const hasHoverProvider = new RawContextKey<boolean>('editorHasHoverProvider', undefined);
 	/**
 	 * @internal
@@ -3069,90 +3277,13 @@ export namespace ModeContextKeys {
 	 * @internal
 	 */
 	export const hasSignatureHelpProvider = new RawContextKey<boolean>('editorHasSignatureHelpProvider', undefined);
+	/**
+	 * @internal
+	 */
+	export const isInEmbeddedEditor = new RawContextKey<boolean>('isInEmbeddedEditor', undefined);
 }
 
-export class BareFontInfo {
-	readonly _bareFontInfoBrand: void;
 
-	readonly fontFamily: string;
-	readonly fontWeight: string;
-	readonly fontSize: number;
-	readonly lineHeight: number;
-
-	/**
-	 * @internal
-	 */
-	constructor(opts: {
-		fontFamily: string;
-		fontWeight: string;
-		fontSize: number;
-		lineHeight: number;
-	}) {
-		this.fontFamily = String(opts.fontFamily);
-		this.fontWeight = String(opts.fontWeight);
-		this.fontSize = opts.fontSize;
-		this.lineHeight = opts.lineHeight | 0;
-	}
-
-	/**
-	 * @internal
-	 */
-	public getId(): string {
-		return this.fontFamily + '-' + this.fontWeight + '-' + this.fontSize + '-' + this.lineHeight + '-';
-	}
-}
-
-export class FontInfo extends BareFontInfo {
-	readonly _editorStylingBrand: void;
-
-	readonly typicalHalfwidthCharacterWidth: number;
-	readonly typicalFullwidthCharacterWidth: number;
-	readonly spaceWidth: number;
-	readonly maxDigitWidth: number;
-
-	/**
-	 * @internal
-	 */
-	constructor(opts: {
-		fontFamily: string;
-		fontWeight: string;
-		fontSize: number;
-		lineHeight: number;
-		typicalHalfwidthCharacterWidth: number;
-		typicalFullwidthCharacterWidth: number;
-		spaceWidth: number;
-		maxDigitWidth: number;
-	}) {
-		super(opts);
-		this.typicalHalfwidthCharacterWidth = opts.typicalHalfwidthCharacterWidth;
-		this.typicalFullwidthCharacterWidth = opts.typicalFullwidthCharacterWidth;
-		this.spaceWidth = opts.spaceWidth;
-		this.maxDigitWidth = opts.maxDigitWidth;
-	}
-
-	/**
-	 * @internal
-	 */
-	public equals(other: FontInfo): boolean {
-		return (
-			this.fontFamily === other.fontFamily
-			&& this.fontWeight === other.fontWeight
-			&& this.fontSize === other.fontSize
-			&& this.lineHeight === other.lineHeight
-			&& this.typicalHalfwidthCharacterWidth === other.typicalHalfwidthCharacterWidth
-			&& this.typicalFullwidthCharacterWidth === other.typicalFullwidthCharacterWidth
-			&& this.spaceWidth === other.spaceWidth
-			&& this.maxDigitWidth === other.maxDigitWidth
-		);
-	}
-
-	/**
-	 * @internal
-	 */
-	public clone(): FontInfo {
-		return new FontInfo(this);
-	}
-}
 
 /**
  * @internal
@@ -3166,23 +3297,6 @@ export interface IConfiguration {
 }
 
 // --- view
-
-/**
- * @internal
- */
-export var ViewEventNames = {
-	ModelFlushedEvent: 'modelFlushedEvent',
-	LinesDeletedEvent: 'linesDeletedEvent',
-	LinesInsertedEvent: 'linesInsertedEvent',
-	LineChangedEvent: 'lineChangedEvent',
-	TokensChangedEvent: 'tokensChangedEvent',
-	DecorationsChangedEvent: 'decorationsChangedEvent',
-	CursorPositionChangedEvent: 'cursorPositionChangedEvent',
-	CursorSelectionChangedEvent: 'cursorSelectionChangedEvent',
-	RevealRangeEvent: 'revealRangeEvent',
-	LineMappingChangedEvent: 'lineMappingChangedEvent',
-	ScrollRequestEvent: 'scrollRequestEvent'
-};
 
 export interface IScrollEvent {
 	readonly scrollTop: number;
@@ -3199,128 +3313,6 @@ export interface IScrollEvent {
 export interface INewScrollPosition {
 	scrollLeft?: number;
 	scrollTop?: number;
-}
-
-/**
- * @internal
- */
-export interface IViewLinesDeletedEvent {
-	/**
-	 * At what line the deletion began (inclusive).
-	 */
-	readonly fromLineNumber: number;
-	/**
-	 * At what line the deletion stopped (inclusive).
-	 */
-	readonly toLineNumber: number;
-}
-
-/**
- * @internal
- */
-export interface IViewLinesInsertedEvent {
-	/**
-	 * Before what line did the insertion begin
-	 */
-	readonly fromLineNumber: number;
-	/**
-	 * `toLineNumber` - `fromLineNumber` + 1 denotes the number of lines that were inserted
-	 */
-	readonly toLineNumber: number;
-}
-
-/**
- * @internal
- */
-export interface IViewLineChangedEvent {
-	/**
-	 * The line that has changed.
-	 */
-	readonly lineNumber: number;
-}
-
-/**
- * @internal
- */
-export interface IViewTokensChangedEvent {
-	readonly ranges: {
-		/**
-		 * Start line number of range
-		 */
-		readonly fromLineNumber: number;
-		/**
-		 * End line number of range
-		 */
-		readonly toLineNumber: number;
-	}[];
-}
-
-/**
- * @internal
- */
-export interface IViewDecorationsChangedEvent {
-	_videDecorationsChangedEventBrand: void;
-}
-
-/**
- * @internal
- */
-export interface IViewCursorPositionChangedEvent {
-	/**
-	 * Primary cursor's position.
-	 */
-	readonly position: Position;
-	/**
-	 * Secondary cursors' position.
-	 */
-	readonly secondaryPositions: Position[];
-	/**
-	 * Is the primary cursor in the editable range?
-	 */
-	readonly isInEditableRange: boolean;
-}
-
-/**
- * @internal
- */
-export interface IViewCursorSelectionChangedEvent {
-	/**
-	 * The primary selection.
-	 */
-	readonly selection: Selection;
-	/**
-	 * The secondary selections.
-	 */
-	readonly secondarySelections: Selection[];
-}
-
-/**
- * @internal
- */
-export interface IViewRevealRangeEvent {
-	/**
-	 * Range to be reavealed.
-	 */
-	readonly range: Range;
-
-	readonly verticalType: VerticalRevealType;
-	/**
-	 * If true: there should be a horizontal & vertical revealing
-	 * If false: there should be just a vertical revealing
-	 */
-	readonly revealHorizontal: boolean;
-	/**
-	 * If true: cursor is revealed if outside viewport
-	 */
-	readonly revealCursor: boolean;
-}
-
-/**
- * @internal
- */
-export interface IViewScrollRequestEvent {
-	readonly deltaLines: number;
-	readonly revealCursor: boolean;
 }
 
 /**
@@ -3365,9 +3357,17 @@ export interface IActionDescriptor {
 	 */
 	label: string;
 	/**
+	 * Precondition rule.
+	 */
+	precondition?: string;
+	/**
 	 * An array of keybindings for the action.
 	 */
 	keybindings?: number[];
+	/**
+	 * The keybinding rule (condition on top of precondition).
+	 */
+	keybindingContext?: string;
 	/**
 	 * Control if the action should show up in the context menu and where.
 	 * The context menu of the editor has these default:
@@ -3382,10 +3382,6 @@ export interface IActionDescriptor {
 	 * Control the order in the context menu group.
 	 */
 	contextMenuOrder?: number;
-	/**
-	 * The keybinding rule.
-	 */
-	keybindingContext?: string;
 	/**
 	 * Method that will be executed when the action is triggered.
 	 * @param editor The editor instance is passed in as a convinience
@@ -3426,7 +3422,7 @@ export interface IEditor {
 	 * An event emitted when the language of the current model has changed.
 	 * @event
 	 */
-	onDidChangeModelMode(listener: (e: IModelModeChangedEvent) => void): IDisposable;
+	onDidChangeModelLanguage(listener: (e: IModelLanguageChangedEvent) => void): IDisposable;
 	/**
 	 * An event emitted when the options of the current model has changed.
 	 * @event
@@ -3507,11 +3503,6 @@ export interface IEditor {
 	 * Returns true if this editor has keyboard focus (e.g. cursor is blinking).
 	 */
 	isFocused(): boolean;
-
-	/**
-	 * Add a new action to this editor.
-	 */
-	addAction(descriptor: IActionDescriptor): void;
 
 	/**
 	 * Returns all actions associated with this editor.
@@ -3640,6 +3631,11 @@ export interface IEditor {
 	 * Scroll vertically or horizontally as necessary and reveal a range centered vertically.
 	 */
 	revealRangeInCenter(range: IRange): void;
+
+	/**
+	 * Scroll vertically or horizontally as necessary and reveal a range at the top of the viewport.
+	 */
+	revealRangeAtTop(range: IRange): void;
 
 	/**
 	 * Scroll vertically or horizontally as necessary and reveal a range centered vertically only if it lies outside the viewport.
@@ -3838,6 +3834,27 @@ export interface ICommonCodeEditor extends IEditor {
 	onDidBlurEditor(listener: () => void): IDisposable;
 
 	/**
+	 * An event emitted before interpreting typed characters (on the keyboard).
+	 * @event
+	 * @internal
+	 */
+	onWillType(listener: (text: string) => void): IDisposable;
+
+	/**
+	 * An event emitted before interpreting typed characters (on the keyboard).
+	 * @event
+	 * @internal
+	 */
+	onDidType(listener: (text: string) => void): IDisposable;
+
+	/**
+	 * An event emitted when users paste text in the editor.
+	 * @event
+	 * @internal
+	 */
+	onDidPaste(listener: (range: Range) => void): IDisposable;
+
+	/**
 	 * Returns true if this editor or one of its widgets has keyboard focus.
 	 */
 	hasWidgetFocus(): boolean;
@@ -3939,11 +3956,12 @@ export interface ICommonCodeEditor extends IEditor {
 	pushUndoStop(): boolean;
 
 	/**
-	 * Execute a command on the editor.
+	 * Execute edits on the editor.
 	 * @param source The source of the call.
-	 * @param command The command to execute
+	 * @param edits The edits to execute.
+	 * @param endCursoState Cursor state after the edits were applied.
 	 */
-	executeEdits(source: string, edits: IIdentifiedSingleEditOperation[]): boolean;
+	executeEdits(source: string, edits: IIdentifiedSingleEditOperation[], endCursoState?: Selection[]): boolean;
 
 	/**
 	 * Execute multiple (concommitent) commands on the editor.
@@ -3979,14 +3997,9 @@ export interface ICommonCodeEditor extends IEditor {
 	getLayoutInfo(): EditorLayoutInfo;
 
 	/**
-	 * This listener is notified when a keypress produces a visible character.
-	 * The callback should not do operations on the view, as the view might not be updated to reflect previous typed characters.
-	 * @param character Character to listen to.
-	 * @param callback Function to call when `character` is typed.
 	 * @internal
 	 */
-	addTypingListener(character: string, callback: () => void): IDisposable;
-
+	getTelemetryData(): { [key: string]: any; };
 }
 
 export interface ICommonDiffEditor extends IEditor {
@@ -4104,7 +4117,7 @@ export var EventType = {
 	ModelChanged: 'modelChanged',
 
 	ModelTokensChanged: 'modelTokensChanged',
-	ModelModeChanged: 'modelsModeChanged',
+	ModelLanguageChanged: 'modelLanguageChanged',
 	ModelOptionsChanged: 'modelOptionsChanged',
 	ModelRawContentChanged: 'contentChanged',
 	ModelContentChanged2: 'contentChanged2',
@@ -4127,19 +4140,22 @@ export var EventType = {
 
 	ViewFocusGained: 'focusGained',
 	ViewFocusLost: 'focusLost',
-	ViewFocusChanged: 'focusChanged',
-	ViewScrollChanged: 'scrollChanged',
 	ViewZonesChanged: 'zonesChanged',
-
-	ViewLayoutChanged: 'viewLayoutChanged',
 
 	ContextMenu: 'contextMenu',
 	MouseDown: 'mousedown',
 	MouseUp: 'mouseup',
 	MouseMove: 'mousemove',
 	MouseLeave: 'mouseleave',
+	MouseDrag: 'mousedrag',
+	MouseDrop: 'mousedrop',
 	KeyDown: 'keydown',
 	KeyUp: 'keyup',
+
+	WillType: 'willType',
+	DidType: 'didType',
+
+	DidPaste: 'didPaste',
 
 	EditorLayout: 'editorLayout',
 
@@ -4449,8 +4465,6 @@ export var Handler = {
 	CreateCursor: 'createCursor',
 	LastCursorMoveToSelect: 'lastCursorMoveToSelect',
 
-	JumpToBracket: 'jumpToBracket',
-
 	Type: 'type',
 	ReplacePreviousChar: 'replacePreviousChar',
 	CompositionStart: 'compositionStart',
@@ -4471,8 +4485,6 @@ export var Handler = {
 	DeleteWordRight: 'deleteWordRight',
 	DeleteWordStartRight: 'deleteWordStartRight',
 	DeleteWordEndRight: 'deleteWordEndRight',
-
-	DeleteAllRight: 'deleteAllRight',
 
 	RemoveSecondaryCursors: 'removeSecondaryCursors',
 	CancelSelection: 'cancelSelection',
@@ -4522,7 +4534,19 @@ export enum TextEditorCursorStyle {
 	/**
 	 * As a horizontal line (sitting under a character).
 	 */
-	Underline = 3
+	Underline = 3,
+	/**
+	 * As a thin vertical line (sitting between two characters).
+	 */
+	LineThin = 4,
+	/**
+	 * As an outlined block (sitting on top of a character).
+	 */
+	BlockOutline = 5,
+	/**
+	 * As a thin horizontal line (sitting under a character).
+	 */
+	UnderlineThin = 6
 }
 
 /**
@@ -4565,6 +4589,12 @@ export function cursorStyleToString(cursorStyle: TextEditorCursorStyle): string 
 		return 'block';
 	} else if (cursorStyle === TextEditorCursorStyle.Underline) {
 		return 'underline';
+	} else if (cursorStyle === TextEditorCursorStyle.LineThin) {
+		return 'line-thin';
+	} else if (cursorStyle === TextEditorCursorStyle.BlockOutline) {
+		return 'block-outline';
+	} else if (cursorStyle === TextEditorCursorStyle.UnderlineThin) {
+		return 'underline-thin';
 	} else {
 		throw new Error('cursorStyleToString: Unknown cursorStyle');
 	}

@@ -9,9 +9,8 @@ import * as path from 'path';
 import { TPromise } from 'vs/base/common/winjs.base';
 import { distinct } from 'vs/base/common/arrays';
 import { getErrorMessage } from 'vs/base/common/errors';
-import { memoize } from 'vs/base/common/decorators';
 import { ArraySet } from 'vs/base/common/set';
-import { IGalleryExtension, IExtensionGalleryService, IGalleryExtensionAsset, IQueryOptions, SortBy, SortOrder, IExtensionManifest, EXTENSION_IDENTIFIER_REGEX } from 'vs/platform/extensionManagement/common/extensionManagement';
+import { IGalleryExtension, IExtensionGalleryService, IGalleryExtensionAsset, IQueryOptions, SortBy, SortOrder, IExtensionManifest } from 'vs/platform/extensionManagement/common/extensionManagement';
 import { getGalleryExtensionTelemetryData } from 'vs/platform/extensionManagement/common/extensionTelemetry';
 import { assign, getOrDefault } from 'vs/base/common/objects';
 import { IRequestService } from 'vs/platform/request/node/request';
@@ -19,8 +18,8 @@ import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { IPager } from 'vs/base/common/paging';
 import { IRequestOptions, IRequestContext, download, asJson, asText } from 'vs/base/node/request';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import pkg from 'vs/platform/package';
-import product from 'vs/platform/product';
+import pkg from 'vs/platform/node/package';
+import product from 'vs/platform/node/product';
 import { isVersionValid } from 'vs/platform/extensions/node/extensionValidator';
 import { getCommonHTTPHeaders } from 'vs/platform/environment/node/http';
 
@@ -267,10 +266,7 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 
 	private extensionsGalleryUrl: string;
 
-	@memoize
-	private get commonHTTPHeaders(): TPromise<{ [key: string]: string; }> {
-		return getCommonHTTPHeaders();
-	}
+	private readonly commonHTTPHeaders: TPromise<{ [key: string]: string; }>;
 
 	constructor(
 		@IRequestService private requestService: IRequestService,
@@ -279,6 +275,7 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 	) {
 		const config = product.extensionsGallery;
 		this.extensionsGalleryUrl = config && config.serviceUrl;
+		this.commonHTTPHeaders = getCommonHTTPHeaders();
 	}
 
 	private api(path = ''): string {
@@ -309,7 +306,7 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 			.withPage(1, pageSize)
 			.withFilter(FilterType.Target, 'Microsoft.VisualStudio.Code')
 			.withFilter(FilterType.ExcludeWithFlags, flagsToString(Flags.Unpublished))
-			.withAssetTypes(AssetType.Icon, AssetType.License, AssetType.Details, AssetType.Manifest, AssetType.VSIX);
+			.withAssetTypes(AssetType.Icon, AssetType.License, AssetType.Details, AssetType.Manifest, AssetType.VSIX, AssetType.Changelog);
 
 		if (text) {
 			query = query.withFilter(FilterType.SearchText, text).withSortBy(SortBy.NoneOrRelevance);
@@ -394,6 +391,11 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 			.then(JSON.parse);
 	}
 
+	getChangelog(extension: IGalleryExtension): TPromise<string> {
+		return this.getAsset(extension.assets.changelog)
+			.then(asText);
+	}
+
 	getAllDependencies(extension: IGalleryExtension): TPromise<IGalleryExtension[]> {
 		return this.loadCompatibleVersion(<IGalleryExtension>extension)
 			.then(compatible => this.getDependenciesReccursively(compatible.properties.dependencies, [], extension));
@@ -431,7 +433,10 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 	}
 
 	private loadDependencies(extensionNames: string[]): TPromise<IGalleryExtension[]> {
-		extensionNames = extensionNames.filter(e => EXTENSION_IDENTIFIER_REGEX.test(e));
+		if (!extensionNames || extensionNames.length === 0) {
+			return TPromise.as([]);
+		}
+
 		let query = new Query()
 			.withFlags(Flags.IncludeLatestVersionOnly, Flags.IncludeAssetUri, Flags.IncludeStatistics, Flags.IncludeFiles, Flags.IncludeVersionProperties)
 			.withPage(1, extensionNames.length)

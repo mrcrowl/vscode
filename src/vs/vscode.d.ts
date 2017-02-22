@@ -45,47 +45,35 @@ declare module 'vscode' {
 
 		/**
 		 * The zero-based line number.
-		 *
-		 * @readonly
 		 */
-		lineNumber: number;
+		readonly lineNumber: number;
 
 		/**
 		 * The text of this line without the line separator characters.
-		 *
-		 * @readonly
 		 */
-		text: string;
+		readonly text: string;
 
 		/**
 		 * The range this line covers without the line separator characters.
-		 *
-		 * @readonly
 		 */
-		range: Range;
+		readonly range: Range;
 
 		/**
 		 * The range this line covers with the line separator characters.
-		 *
-		 * @readonly
 		 */
-		rangeIncludingLineBreak: Range;
+		readonly rangeIncludingLineBreak: Range;
 
 		/**
 		 * The offset of the first character which is not a whitespace character as defined
 		 * by `/\s/`. **Note** that if a line is all whitespaces the length of the line is returned.
-		 *
-		 * @readonly
 		 */
-		firstNonWhitespaceCharacterIndex: number;
+		readonly firstNonWhitespaceCharacterIndex: number;
 
 		/**
 		 * Whether this line is whitespace only, shorthand
 		 * for [TextLine.firstNonWhitespaceCharacterIndex](#TextLine.firstNonWhitespaceCharacterIndex) === [TextLine.text.length](#TextLine.text).
-		 *
-		 * @readonly
 		 */
-		isEmptyOrWhitespace: boolean;
+		readonly isEmptyOrWhitespace: boolean;
 	}
 
 	/**
@@ -98,47 +86,35 @@ declare module 'vscode' {
 		 * The associated URI for this document. Most documents have the __file__-scheme, indicating that they
 		 * represent files on disk. However, some documents may have other schemes indicating that they are not
 		 * available on disk.
-		 *
-		 * @readonly
 		 */
-		uri: Uri;
+		readonly uri: Uri;
 
 		/**
 		 * The file system path of the associated resource. Shorthand
 		 * notation for [TextDocument.uri.fsPath](#TextDocument.uri). Independent of the uri scheme.
-		 *
-		 * @readonly
 		 */
-		fileName: string;
+		readonly fileName: string;
 
 		/**
 		 * Is this document representing an untitled file.
-		 *
-		 * @readonly
 		 */
-		isUntitled: boolean;
+		readonly isUntitled: boolean;
 
 		/**
 		 * The identifier of the language associated with this document.
-		 *
-		 * @readonly
 		 */
-		languageId: string;
+		readonly languageId: string;
 
 		/**
 		 * The version number of this document (it will strictly increase after each
 		 * change, including undo/redo).
-		 *
-		 * @readonly
 		 */
-		version: number;
+		readonly version: number;
 
 		/**
 		 * true if there are unpersisted changes.
-		 *
-		 * @readonly
 		 */
-		isDirty: boolean;
+		readonly isDirty: boolean;
 
 		/**
 		 * Save the underlying file.
@@ -151,10 +127,8 @@ declare module 'vscode' {
 
 		/**
 		 * The number of lines in this document.
-		 *
-		 * @readonly
 		 */
-		lineCount: number;
+		readonly lineCount: number;
 
 		/**
 		 * Returns a text line denoted by the line number. Note
@@ -249,15 +223,13 @@ declare module 'vscode' {
 
 		/**
 		 * The zero-based line value.
-		 * @readonly
 		 */
-		line: number;
+		readonly line: number;
 
 		/**
 		 * The zero-based character value.
-		 * @readonly
 		 */
-		character: number;
+		readonly character: number;
 
 		/**
 		 * @param line A zero-based line value.
@@ -370,15 +342,13 @@ declare module 'vscode' {
 
 		/**
 		 * The start position. It is before or equal to [end](#Range.end).
-		 * @readonly
 		 */
-		start: Position;
+		readonly start: Position;
 
 		/**
 		 * The end position. It is after or equal to [start](#Range.start).
-		 * @readonly
 		 */
-		end: Position;
+		readonly end: Position;
 
 		/**
 		 * Create a new range from two positions. If `start` is not
@@ -401,12 +371,12 @@ declare module 'vscode' {
 		constructor(startLine: number, startCharacter: number, endLine: number, endCharacter: number);
 
 		/**
-		 * `true` iff `start` and `end` are equal.
+		 * `true` if `start` and `end` are equal.
 		 */
 		isEmpty: boolean;
 
 		/**
-		 * `true` iff `start.line` and `end.line` are equal.
+		 * `true` if `start.line` and `end.line` are equal.
 		 */
 		isSingleLine: boolean;
 
@@ -414,7 +384,7 @@ declare module 'vscode' {
 		 * Check if a position or a range is contained in this range.
 		 *
 		 * @param positionOrRange A position or a range.
-		 * @return `true` iff the position or range is inside or equal
+		 * @return `true` if the position or range is inside or equal
 		 * to this range.
 		 */
 		contains(positionOrRange: Position | Range): boolean;
@@ -577,17 +547,29 @@ declare module 'vscode' {
 	 */
 	export enum TextEditorCursorStyle {
 		/**
-		 * Render the cursor as a vertical line.
+		 * Render the cursor as a vertical thick line.
 		 */
 		Line = 1,
 		/**
-		 * Render the cursor as a block.
+		 * Render the cursor as a block filled.
 		 */
 		Block = 2,
 		/**
-		 * Render the cursor as a horizontal line under the character.
+		 * Render the cursor as a thick horizontal line.
 		 */
-		Underline = 3
+		Underline = 3,
+		/**
+		 * Render the cursor as a vertical thin line.
+		 */
+		LineThin = 4,
+		/**
+		 * Render the cursor as a block outlined.
+		 */
+		BlockOutline = 5,
+		/**
+		 * Render the cursor as a thin horizontal line.
+		 */
+		UnderlineThin = 6
 	}
 
 	/**
@@ -656,9 +638,8 @@ declare module 'vscode' {
 
 		/**
 		 * Internal representation of the handle.
-		 * @readonly
 		 */
-		key: string;
+		readonly key: string;
 
 		/**
 		 * Remove this decoration type and all decorations on all text editors using it.
@@ -682,7 +663,11 @@ declare module 'vscode' {
 		 * If the range is outside the viewport, it will be revealed in the center of the viewport.
 		 * Otherwise, it will be revealed with as little scrolling as possible.
 		 */
-		InCenterIfOutsideViewport = 2
+		InCenterIfOutsideViewport = 2,
+		/**
+		 * The range will always be revealed at the top of the viewport.
+		 */
+		AtTop = 3
 	}
 
 	/**
@@ -968,6 +953,19 @@ declare module 'vscode' {
 		edit(callback: (editBuilder: TextEditorEdit) => void, options?: { undoStopBefore: boolean; undoStopAfter: boolean; }): Thenable<boolean>;
 
 		/**
+		 * Insert a [snippet](#SnippetString) and put the editor into snippet mode. "Snippet mode"
+		 * means the editor adds placeholders and additionals cursors so that the user can complete
+		 * or accept the snippet.
+		 *
+		 * @param snippet The snippet to insert in this edit.
+		 * @param location Position or range at which to insert the snippet, defaults to the current editor selection or selections.
+		 * @param options The undo/redo behaviour around this edit. By default, undo stops will be created before and after this edit.
+		 * @return A promise that resolves with a value indicating if the snippet could be inserted. Note that the promise does not signal
+		 * that the snippet is completely filled-in or accepted.
+		 */
+		insertSnippet(snippet: SnippetString, location?: Position | Range | Position[] | Range[], options?: { undoStopBefore: boolean; undoStopAfter: boolean; }): Thenable<boolean>;
+
+		/**
 		 * Adds a set of decorations to the text editor. If a set of decorations already exists with
 		 * the given [decoration type](#TextEditorDecorationType), they will be replaced.
 		 *
@@ -1088,28 +1086,28 @@ declare module 'vscode' {
 		 * Scheme is the `http` part of `http://www.msft.com/some/path?query#fragment`.
 		 * The part before the first colon.
 		 */
-		scheme: string;
+		readonly scheme: string;
 
 		/**
 		 * Authority is the `www.msft.com` part of `http://www.msft.com/some/path?query#fragment`.
 		 * The part between the first double slashes and the next slash.
 		 */
-		authority: string;
+		readonly authority: string;
 
 		/**
 		 * Path is the `/some/path` part of `http://www.msft.com/some/path?query#fragment`.
 		 */
-		path: string;
+		readonly path: string;
 
 		/**
 		 * Query is the `query` part of `http://www.msft.com/some/path?query#fragment`.
 		 */
-		query: string;
+		readonly query: string;
 
 		/**
 		 * Fragment is the `fragment` part of `http://www.msft.com/some/path?query#fragment`.
 		 */
-		fragment: string;
+		readonly fragment: string;
 
 		/**
 		 * The string representing the corresponding file system path of this Uri.
@@ -1118,20 +1116,21 @@ declare module 'vscode' {
 		 * uses the platform specific path separator. Will *not* validate the path for
 		 * invalid characters and semantics. Will *not* look at the scheme of this Uri.
 		 */
-		fsPath: string;
+		readonly fsPath: string;
 
 		/**
 		 * Derive a new Uri from this Uri.
+		 *
+		 * ```ts
+		 * let file = Uri.parse('before:some/file/path');
+		 * let other = file.with({ scheme: 'after' });
+		 * assert.ok(other.toString() === 'after:some/file/path');
+		 * ```
 		 *
 		 * @param change An object that describes a change to this Uri. To unset components use `null` or
 		 *  the empty string.
 		 * @return A new Uri that reflects the given change. Will return `this` Uri if the change
 		 *  is not changing anything.
-		 * @sample ```
-			let file = Uri.parse('before:some/file/path');
-			let other = file.with({ scheme: 'after' });
-			assert.ok(other.toString() === 'after:some/file/path');
-		 * ```
 		 */
 		with(change: { scheme?: string; authority?: string; path?: string; query?: string; fragment?: string }): Uri;
 
@@ -1425,6 +1424,21 @@ declare module 'vscode' {
 	}
 
 	/**
+	 * Options to configure the behavior of the message.
+	 *
+	 * @see [showInformationMessage](#window.showInformationMessage)
+	 * @see [showWarningMessage](#window.showWarningMessage)
+	 * @see [showErrorMessage](#window.showErrorMessage)
+	 */
+	export interface MessageOptions {
+
+		/**
+		 * Indicates that this message should be modal.
+		 */
+		modal?: boolean;
+	}
+
+	/**
 	 * Options to configure the behavior of the input box UI.
 	 */
 	export interface InputBoxOptions {
@@ -1510,26 +1524,26 @@ declare module 'vscode' {
 	 * The snippets below are all valid implementions of the [`HoverProvider`](#HoverProvider):
 	 *
 	 * ```ts
-	 *	let a: HoverProvider = {
-	 *		provideHover(doc, pos, token): ProviderResult<Hover> {
-	 *			return new Hover('Hello World');
-	 *		}
-	 *	}
+	 * let a: HoverProvider = {
+	 * 	provideHover(doc, pos, token): ProviderResult<Hover> {
+	 * 		return new Hover('Hello World');
+	 * 	}
+	 * }
 	 *
-	 *	let b: HoverProvider = {
-	 *		provideHover(doc, pos, token): ProviderResult<Hover> {
-	 *			return new Promise(resolve => {
-	 * 				resolve(new Hover('Hello World'));
-	 *			});
-	 *		}
-	 *	}
+	 * let b: HoverProvider = {
+	 * 	provideHover(doc, pos, token): ProviderResult<Hover> {
+	 * 		return new Promise(resolve => {
+	 * 			resolve(new Hover('Hello World'));
+	 * 	 	});
+	 * 	}
+	 * }
 	 *
-	 *	let c: HoverProvider = {
-	 *		provideHover(doc, pos, token): ProviderResult<Hover> {
-	 *			return; // undefined
-	 *		}
-	 *	}
-	 *```
+	 * let c: HoverProvider = {
+	 * 	provideHover(doc, pos, token): ProviderResult<Hover> {
+	 * 		return; // undefined
+	 * 	}
+	 * }
+	 * ```
 	 */
 	export type ProviderResult<T> = T | undefined | null | Thenable<T | undefined | null>
 
@@ -1541,10 +1555,8 @@ declare module 'vscode' {
 
 		/**
 		 * An array of diagnostics.
-		 *
-		 * @readonly
 		 */
-		diagnostics: Diagnostic[];
+		readonly diagnostics: Diagnostic[];
 	}
 
 	/**
@@ -1592,10 +1604,8 @@ declare module 'vscode' {
 
 		/**
 		 * `true` when there is a command associated.
-		 *
-		 * @readonly
 		 */
-		isResolved: boolean;
+		readonly isResolved: boolean;
 
 		/**
 		 * Creates a new code lens object.
@@ -1611,6 +1621,11 @@ declare module 'vscode' {
 	 * as dedicated horizontal lines in between the source text.
 	 */
 	export interface CodeLensProvider {
+
+		/**
+		 * An optional event to signal that the code lenses from this provider have changed.
+		 */
+		onDidChangeCodeLenses?: Event<void>;
 
 		/**
 		 * Compute a list of [lenses](#CodeLens). This call should return as fast as possible and if
@@ -1659,6 +1674,42 @@ declare module 'vscode' {
 		 * signaled by returning `undefined` or `null`.
 		 */
 		provideDefinition(document: TextDocument, position: Position, token: CancellationToken): ProviderResult<Definition>;
+	}
+
+	/**
+	 * The implemenetation provider interface defines the contract between extensions and
+	 * the go to implementation feature.
+	 */
+	export interface ImplementationProvider {
+
+		/**
+		 * Provide the implementations of the symbol at the given position and document.
+		 *
+		 * @param document The document in which the command was invoked.
+		 * @param position The position at which the command was invoked.
+		 * @param token A cancellation token.
+		 * @return A definition or a thenable that resolves to such. The lack of a result can be
+		 * signaled by returning `undefined` or `null`.
+		 */
+		provideImplementation(document: TextDocument, position: Position, token: CancellationToken): ProviderResult<Definition>;
+	}
+
+	/**
+	 * The type definition provider defines the contract between extensions and
+	 * the go to type definition feature.
+	 */
+	export interface TypeDefinitionProvider {
+
+		/**
+		 * Provide the type definition of the symbol at the given position and document.
+		 *
+		 * @param document The document in which the command was invoked.
+		 * @param position The position at which the command was invoked.
+		 * @param token A cancellation token.
+		 * @return A definition or a thenable that resolves to such. The lack of a result can be
+		 * signaled by returning `undefined` or `null`.
+		 */
+		provideTypeDefinition(document: TextDocument, position: Position, token: CancellationToken): ProviderResult<Definition>;
 	}
 
 	/**
@@ -1998,10 +2049,8 @@ declare module 'vscode' {
 
 		/**
 		 * The number of affected resources.
-		 *
-		 * @readonly
 		 */
-		size: number;
+		readonly size: number;
 
 		/**
 		 * Replace the given range with given text for the given resource.
@@ -2066,8 +2115,9 @@ declare module 'vscode' {
 	 *
 	 * A snippet can define tab stops and placeholders with `$1`, `$2`
 	 * and `${3:foo}`. `$0` defines the final tab stop, it defaults to
-	 * the end of the snippet. Placeholders with equal identifiers are linked,
-	 * that is typing in one will update others too.
+	 * the end of the snippet. Variables are defined with `$name` and
+	 * `${name:default value}`. The full snippet syntax is documented
+	 * [here](http://code.visualstudio.com/docs/customization/userdefinedsnippets#_creating-your-own-snippets).
 	 */
 	export class SnippetString {
 
@@ -2110,19 +2160,10 @@ declare module 'vscode' {
 		appendPlaceholder(value: string | ((snippet: SnippetString) => any), number?: number): SnippetString;
 
 		/**
-		 * Builder-function that appends a variable (`$VAR`) to
+		 * Builder-function that appends a variable (`${VAR}`) to
 		 * the [`value`](#SnippetString.value) of this snippet string.
 		 *
 		 * @param name The name of the variable - excluding the `$`.
-		 * @return This snippet string.
-		 */
-		appendVariable(name: string): SnippetString;
-
-		/**
-		 * Builder-function that appends a variable and default value (`${VAR:fallback}`) to
-		 * the [`value`](#SnippetString.value) of this snippet string.
-		 *
-		 * @param name The name of the variable (excluding the `$`)
 		 * @param defaultValue The default value which is used when the variable name cannot
 		 * be resolved - either a string or a function with which a nested snippet can be created.
 		 * @return This snippet string.
@@ -2358,7 +2399,8 @@ declare module 'vscode' {
 		Snippet = 14,
 		Color = 15,
 		File = 16,
-		Reference = 17
+		Reference = 17,
+		Folder = 18
 	}
 
 	/**
@@ -2433,6 +2475,13 @@ declare module 'vscode' {
 		 * [contain](#Range.contains) the position at which completion has been [requested](#CompletionItemProvider.provideCompletionItems).
 		 */
 		range?: Range;
+
+		/**
+		 * An optional set of characters that when pressed while this completion is active will accept it first and
+		 * then type that character. *Note* that all commit characters should have `length=1` and that superfluous
+		 * characters will be ignored.
+		 */
+		commitCharacters?: string[];
 
 		/**
 		 * @deprecated **Deprecated** in favor of `CompletionItem.insertText` and `CompletionItem.range`.
@@ -2781,7 +2830,7 @@ declare module 'vscode' {
 	 * part of the section identifier. The following snippets shows how to retrieve all configurations
 	 * from `launch.json`:
 	 *
-	 * ```
+	 * ```ts
 	 * // launch.json configuration
 	 * const config = workspace.getConfiguration('launch');
 	 *
@@ -2813,7 +2862,7 @@ declare module 'vscode' {
 		 * Check if this configuration has a certain value.
 		 *
 		 * @param section Configuration name, supports _dotted_ names.
-		 * @return `true` iff the section doesn't resolve to `undefined`.
+		 * @return `true` if the section doesn't resolve to `undefined`.
 		 */
 		has(section: string): boolean;
 
@@ -2851,9 +2900,8 @@ declare module 'vscode' {
 
 		/**
 		 * Readable dictionary that backs this configuration.
-		 * @readonly
 		 */
-		[key: string]: any;
+		readonly [key: string]: any;
 	}
 
 	/**
@@ -2966,9 +3014,8 @@ declare module 'vscode' {
 		 * The name of this diagnostic collection, for instance `typescript`. Every diagnostic
 		 * from this collection will be associated with this name. Also, the task framework uses this
 		 * name when defining [problem matchers](https://code.visualstudio.com/docs/editor/tasks#_defining-a-problem-matcher).
-		 * @readonly
 		 */
-		name: string;
+		readonly name: string;
 
 		/**
 		 * Assign diagnostics for given resource. Will replace
@@ -3058,9 +3105,8 @@ declare module 'vscode' {
 
 		/**
 		 * The human-readable name of this output channel.
-		 * @readonly
 		 */
-		name: string;
+		readonly name: string;
 
 		/**
 		 * Append the given value to the channel.
@@ -3135,18 +3181,14 @@ declare module 'vscode' {
 
 		/**
 		 * The alignment of this item.
-		 *
-		 * @readonly
 		 */
-		alignment: StatusBarAlignment;
+		readonly alignment: StatusBarAlignment;
 
 		/**
 		 * The priority of this item. Higher value means the item should
 		 * be shown more to the left.
-		 *
-		 * @readonly
 		 */
-		priority: number;
+		readonly priority: number;
 
 		/**
 		 * The text to show for the entry. You can embed icons in the text by leveraging the syntax:
@@ -3161,18 +3203,18 @@ declare module 'vscode' {
 		/**
 		 * The tooltip text when you hover over this entry.
 		 */
-		tooltip: string;
+		tooltip: string | undefined;
 
 		/**
 		 * The foreground color for this entry.
 		 */
-		color: string;
+		color: string | undefined;
 
 		/**
 		 * The identifier of a command to run on click. The command must be
 		 * [known](#commands.getCommands).
 		 */
-		command: string;
+		command: string | undefined;
 
 		/**
 		 * Shows the entry in the status bar.
@@ -3198,17 +3240,13 @@ declare module 'vscode' {
 
 		/**
 		 * The name of the terminal.
-		 *
-		 * @readonly
 		 */
-		name: string;
+		readonly name: string;
 
 		/**
 		 * The process ID of the shell process.
-		 *
-		 * @readonly
 		 */
-		processId: Thenable<number>;
+		readonly processId: Thenable<number>;
 
 		/**
 		 * Send text to the terminal. The text is written to the stdin of the underlying pty process
@@ -3248,39 +3286,29 @@ declare module 'vscode' {
 
 		/**
 		 * The canonical extension identifier in the form of: `publisher.name`.
-		 *
-		 * @readonly
 		 */
-		id: string;
+		readonly id: string;
 
 		/**
 		 * The absolute file path of the directory containing this extension.
-		 *
-		 * @readonly
 		 */
-		extensionPath: string;
+		readonly extensionPath: string;
 
 		/**
 		 * `true` if the extension has been activated.
-		 *
-		 * @readonly
 		 */
-		isActive: boolean;
+		readonly isActive: boolean;
 
 		/**
 		 * The parsed contents of the extension's package.json.
-		 *
-		 * @readonly
 		 */
-		packageJSON: any;
+		readonly packageJSON: any;
 
 		/**
 		 * The public API exported by this extension. It is an invalid action
 		 * to access this field before this extension has been activated.
-		 *
-		 * @readonly
 		 */
-		exports: T;
+		readonly exports: T;
 
 		/**
 		 * Activates this extension and returns its public API.
@@ -3338,7 +3366,7 @@ declare module 'vscode' {
 		 * Use [`workspaceState`](#ExtensionContext.workspaceState) or
 		 * [`globalState`](#ExtensionContext.globalState) to store key value data.
 		 */
-		storagePath: string;
+		storagePath: string | undefined;
 	}
 
 	/**
@@ -3427,20 +3455,21 @@ declare module 'vscode' {
 	 * when invoking an editor command not all argument types are supported.
 	 *
 	 * This is a sample that registers a command handler and adds an entry for that command to the palette. First
-	 * register a command handler with the identfier `extension.sayHello`.
+	 * register a command handler with the identifier `extension.sayHello`.
 	 * ```javascript
 	 * commands.registerCommand('extension.sayHello', () => {
-	 * 		window.showInformationMessage('Hello World!');
+	 * 	window.showInformationMessage('Hello World!');
 	 * });
 	 * ```
-	 * Second, bind the command identfier to a title under which it will show in the palette (`package.json`).
+	 * Second, bind the command identifier to a title under which it will show in the palette (`package.json`).
 	 * ```json
 	 * {
-	 * "contributes": {
-	 * 	"commands": [{
-	 * 		"command": "extension.sayHello",
-	 * 		"title": "Hello World"
-	 * 	}]
+	 * 	"contributes": {
+	 * 		"commands": [{
+	 * 			"command": "extension.sayHello",
+	 * 			"title": "Hello World"
+	 * 		}]
+	 * 	}
 	 * }
 	 * ```
 	 */
@@ -3585,6 +3614,17 @@ declare module 'vscode' {
 		export function showInformationMessage(message: string, ...items: string[]): Thenable<string | undefined>;
 
 		/**
+		 * Show an information message to users. Optionally provide an array of items which will be presented as
+		 * clickable buttons.
+		 *
+		 * @param message The message to show.
+		 * @param options Configures the behaviour of the message.
+		 * @param items A set of items that will be rendered as actions in the message.
+		 * @return A thenable that resolves to the selected item or `undefined` when being dismissed.
+		 */
+		export function showInformationMessage(message: string, options: MessageOptions, ...items: string[]): Thenable<string | undefined>;
+
+		/**
 		 * Show an information message.
 		 *
 		 * @see [showInformationMessage](#window.showInformationMessage)
@@ -3594,6 +3634,18 @@ declare module 'vscode' {
 		 * @return A thenable that resolves to the selected item or `undefined` when being dismissed.
 		 */
 		export function showInformationMessage<T extends MessageItem>(message: string, ...items: T[]): Thenable<T | undefined>;
+
+		/**
+		 * Show an information message.
+		 *
+		 * @see [showInformationMessage](#window.showInformationMessage)
+		 *
+		 * @param message The message to show.
+		 * @param options Configures the behaviour of the message.
+		 * @param items A set of items that will be rendered as actions in the message.
+		 * @return A thenable that resolves to the selected item or `undefined` when being dismissed.
+		 */
+		export function showInformationMessage<T extends MessageItem>(message: string, options: MessageOptions, ...items: T[]): Thenable<T | undefined>;
 
 		/**
 		 * Show a warning message.
@@ -3612,10 +3664,34 @@ declare module 'vscode' {
 		 * @see [showInformationMessage](#window.showInformationMessage)
 		 *
 		 * @param message The message to show.
+		 * @param options Configures the behaviour of the message.
+		 * @param items A set of items that will be rendered as actions in the message.
+		 * @return A thenable that resolves to the selected item or `undefined` when being dismissed.
+		 */
+		export function showWarningMessage(message: string, options: MessageOptions, ...items: string[]): Thenable<string | undefined>;
+
+		/**
+		 * Show a warning message.
+		 *
+		 * @see [showInformationMessage](#window.showInformationMessage)
+		 *
+		 * @param message The message to show.
 		 * @param items A set of items that will be rendered as actions in the message.
 		 * @return A thenable that resolves to the selected item or `undefined` when being dismissed.
 		 */
 		export function showWarningMessage<T extends MessageItem>(message: string, ...items: T[]): Thenable<T | undefined>;
+
+		/**
+		 * Show a warning message.
+		 *
+		 * @see [showInformationMessage](#window.showInformationMessage)
+		 *
+		 * @param message The message to show.
+		 * @param options Configures the behaviour of the message.
+		 * @param items A set of items that will be rendered as actions in the message.
+		 * @return A thenable that resolves to the selected item or `undefined` when being dismissed.
+		 */
+		export function showWarningMessage<T extends MessageItem>(message: string, options: MessageOptions, ...items: T[]): Thenable<T | undefined>;
 
 		/**
 		 * Show an error message.
@@ -3634,10 +3710,34 @@ declare module 'vscode' {
 		 * @see [showInformationMessage](#window.showInformationMessage)
 		 *
 		 * @param message The message to show.
+		 * @param options Configures the behaviour of the message.
+		 * @param items A set of items that will be rendered as actions in the message.
+		 * @return A thenable that resolves to the selected item or `undefined` when being dismissed.
+		 */
+		export function showErrorMessage(message: string, options: MessageOptions, ...items: string[]): Thenable<string | undefined>;
+
+		/**
+		 * Show an error message.
+		 *
+		 * @see [showInformationMessage](#window.showInformationMessage)
+		 *
+		 * @param message The message to show.
 		 * @param items A set of items that will be rendered as actions in the message.
 		 * @return A thenable that resolves to the selected item or `undefined` when being dismissed.
 		 */
 		export function showErrorMessage<T extends MessageItem>(message: string, ...items: T[]): Thenable<T | undefined>;
+
+		/**
+		 * Show an error message.
+		 *
+		 * @see [showInformationMessage](#window.showInformationMessage)
+		 *
+		 * @param message The message to show.
+		 * @param options Configures the behaviour of the message.
+		 * @param items A set of items that will be rendered as actions in the message.
+		 * @return A thenable that resolves to the selected item or `undefined` when being dismissed.
+		 */
+		export function showErrorMessage<T extends MessageItem>(message: string, options: MessageOptions, ...items: T[]): Thenable<T | undefined>;
 
 		/**
 		 * Shows a selection list.
@@ -3683,16 +3783,7 @@ declare module 'vscode' {
 		 * Set a message to the status bar. This is a short hand for the more powerful
 		 * status bar [items](#window.createStatusBarItem).
 		 *
-		 * @param text The message to show, support icon subtitution as in status bar [items](#StatusBarItem.text).
-		 * @return A disposable which hides the status bar message.
-		 */
-		export function setStatusBarMessage(text: string): Disposable;
-
-		/**
-		 * Set a message to the status bar. This is a short hand for the more powerful
-		 * status bar [items](#window.createStatusBarItem).
-		 *
-		 * @param text The message to show, support icon subtitution as in status bar [items](#StatusBarItem.text).
+		 * @param text The message to show, supports icon substitution as in status bar [items](#StatusBarItem.text).
 		 * @param hideAfterTimeout Timeout in milliseconds after which the message will be disposed.
 		 * @return A disposable which hides the status bar message.
 		 */
@@ -3702,11 +3793,23 @@ declare module 'vscode' {
 		 * Set a message to the status bar. This is a short hand for the more powerful
 		 * status bar [items](#window.createStatusBarItem).
 		 *
-		 * @param text The message to show, support icon subtitution as in status bar [items](#StatusBarItem.text).
+		 * @param text The message to show, supports icon substitution as in status bar [items](#StatusBarItem.text).
 		 * @param hideWhenDone Thenable on which completion (resolve or reject) the message will be disposed.
 		 * @return A disposable which hides the status bar message.
 		 */
 		export function setStatusBarMessage(text: string, hideWhenDone: Thenable<any>): Disposable;
+
+		/**
+		 * Set a message to the status bar. This is a short hand for the more powerful
+		 * status bar [items](#window.createStatusBarItem).
+		 *
+		 * *Note* that status bar messages stack and that they must be disposed when no
+		 * longer used.
+		 *
+		 * @param text The message to show, supports icon substitution as in status bar [items](#StatusBarItem.text).
+		 * @return A disposable which hides the status bar message.
+		 */
+		export function setStatusBarMessage(text: string): Disposable;
 
 		/**
 		 * Creates a status bar [item](#StatusBarItem).
@@ -3718,7 +3821,8 @@ declare module 'vscode' {
 		export function createStatusBarItem(alignment?: StatusBarAlignment, priority?: number): StatusBarItem;
 
 		/**
-		 * Creates a [Terminal](#Terminal).
+		 * Creates a [Terminal](#Terminal). The cwd of the terminal will be the workspace directory
+		 * if it exists, regardless of whether an explicit customStartPath setting exists.
 		 *
 		 * @param name Optional human-readable string which will be used to represent the terminal in the UI.
 		 * @param shellPath Optional path to a custom shell executable to be used in the terminal.
@@ -3726,6 +3830,35 @@ declare module 'vscode' {
 		 * @return A new Terminal.
 		 */
 		export function createTerminal(name?: string, shellPath?: string, shellArgs?: string[]): Terminal;
+
+		/**
+		 * Creates a [Terminal](#Terminal). The cwd of the terminal will be the workspace directory
+		 * if it exists, regardless of whether an explicit customStartPath setting exists.
+		 *
+		 * @param options A TerminalOptions object describing the characteristics of the new terminal.
+		 * @return A new Terminal.
+		 */
+		export function createTerminal(options: TerminalOptions): Terminal;
+	}
+
+	/**
+	 * Value-object describing what options formatting should use.
+	 */
+	export interface TerminalOptions {
+		/**
+		 * A human-readable string which will be used to represent the terminal in the UI.
+		 */
+		name?: string;
+
+		/**
+		 * A path to a custom shell executable to be used in the terminal.
+		 */
+		shellPath?: string;
+
+		/**
+		 * Args for the custom shell executable, this does not work on Windows (see #8429)
+		 */
+		shellArgs?: string[];
 	}
 
 	/**
@@ -3813,11 +3946,11 @@ declare module 'vscode' {
 		 *
 		 * ```ts
 		 * workspace.onWillSaveTextDocument(event => {
-			// async, will *throw* an error
-		 	setTimeout(() => event.waitUntil(promise));
-
-		 	// sync, OK
-		 *	event.waitUntil(promise);
+		 * 	// async, will *throw* an error
+		 * 	setTimeout(() => event.waitUntil(promise));
+		 *
+		 * 	// sync, OK
+		 * 	event.waitUntil(promise);
 		 * })
 		 * ```
 		 *
@@ -3945,6 +4078,16 @@ declare module 'vscode' {
 		export function openTextDocument(fileName: string): Thenable<TextDocument>;
 
 		/**
+		 * Opens an untitled text document. The editor will prompt the user for a file
+		 * path when the document is to be saved. The `options` parameter allows to
+		 * specify the *language* of the document.
+		 *
+		 * @param options Options to control how the document will be created.
+		 * @return A promise that resolves to a [document](#TextDocument).
+		 */
+		export function openTextDocument(options?: { language: string; }): Thenable<TextDocument>;
+
+		/**
 		 * Register a text document content provider.
 		 *
 		 * Only one provider can be registered per scheme.
@@ -4023,9 +4166,9 @@ declare module 'vscode' {
 	 *
 	 * ```javascript
 	 * languages.registerHoverProvider('javascript', {
-	 * 		provideHover(document, position, token) {
-	 * 			return new Hover('I am a hover!');
-	 * 		}
+	 * 	provideHover(document, position, token) {
+	 * 		return new Hover('I am a hover!');
+	 * 	}
 	 * });
 	 * ```
 	 *
@@ -4132,6 +4275,32 @@ declare module 'vscode' {
 		 * @return A [disposable](#Disposable) that unregisters this provider when being disposed.
 		 */
 		export function registerDefinitionProvider(selector: DocumentSelector, provider: DefinitionProvider): Disposable;
+
+		/**
+		 * Register an implementation provider.
+		 *
+		 * Multiple providers can be registered for a language. In that case providers are asked in
+		 * parallel and the results are merged. A failing provider (rejected promise or exception) will
+		 * not cause a failure of the whole operation.
+		 *
+		 * @param selector A selector that defines the documents this provider is applicable to.
+		 * @param provider An implementation provider.
+		 * @return A [disposable](#Disposable) that unregisters this provider when being disposed.
+		 */
+		export function registerImplementationProvider(selector: DocumentSelector, provider: ImplementationProvider): Disposable;
+
+		/**
+		 * Register a type definition provider.
+		 *
+		 * Multiple providers can be registered for a language. In that case providers are asked in
+		 * parallel and the results are merged. A failing provider (rejected promise or exception) will
+		 * not cause a failure of the whole operation.
+		 *
+		 * @param selector A selector that defines the documents this provider is applicable to.
+		 * @param provider A type definition provider.
+		 * @return A [disposable](#Disposable) that unregisters this provider when being disposed.
+		 */
+		export function registerTypeDefinitionProvider(selector: DocumentSelector, provider: TypeDefinitionProvider): Disposable;
 
 		/**
 		 * Register a hover provider.
@@ -4301,16 +4470,16 @@ declare module 'vscode' {
 	 *
 	 * ```javascript
 	 * export function activate(context: vscode.ExtensionContext) {
-	 * 		let api = {
-	 * 			sum(a, b) {
-	 * 				return a + b;
-	 * 			},
-	 * 			mul(a, b) {
-	 * 				return a * b;
-	 * 			}
-	 * 		};
-	 * 		// 'export' public api-surface
-	 *		return api;
+	 * 	let api = {
+	 * 		sum(a, b) {
+	 * 			return a + b;
+	 * 		},
+	 * 		mul(a, b) {
+	 * 			return a * b;
+	 * 		}
+	 * 	};
+	 * 	// 'export' public api-surface
+	 * 	return api;
 	 * }
 	 * ```
 	 * When depending on the API of another extension add an `extensionDependency`-entry

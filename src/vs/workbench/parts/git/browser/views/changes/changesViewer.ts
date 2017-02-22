@@ -100,6 +100,7 @@ export class DataSource implements tree.IDataSource {
 			var statusGroup = <git.IStatusGroup>element;
 			return statusGroup.all().length > 0;
 		}
+		return false;
 	}
 
 	public getChildren(tree: tree.ITree, element: any): winjs.Promise {
@@ -605,7 +606,7 @@ export class DragAndDrop extends ActionContainer implements tree.IDragAndDrop {
 	private onDragWorkingTree(targetElement: any): tree.IDragOverReaction {
 		if (targetElement instanceof gitmodel.StatusGroup) {
 			var targetStatusGroup = <git.IStatusGroup>targetElement;
-			return targetStatusGroup.getType() === git.StatusType.INDEX ? tree.DRAG_OVER_ACCEPT_BUBBLE_DOWN : tree.DRAG_OVER_REJECT;
+			return targetStatusGroup.getType() === git.StatusType.INDEX ? tree.DRAG_OVER_ACCEPT_BUBBLE_DOWN(false) : tree.DRAG_OVER_REJECT;
 		} else if (targetElement instanceof gitmodel.FileStatus) {
 			var targetStatus = <git.IFileStatus>targetElement;
 			return targetStatus.getType() === git.StatusType.INDEX ? tree.DRAG_OVER_ACCEPT_BUBBLE_UP : tree.DRAG_OVER_REJECT;
@@ -617,7 +618,7 @@ export class DragAndDrop extends ActionContainer implements tree.IDragAndDrop {
 	private onDragIndex(targetElement: any): tree.IDragOverReaction {
 		if (targetElement instanceof gitmodel.StatusGroup) {
 			var targetStatusGroup = <git.IStatusGroup>targetElement;
-			return targetStatusGroup.getType() === git.StatusType.WORKING_TREE ? tree.DRAG_OVER_ACCEPT_BUBBLE_DOWN : tree.DRAG_OVER_REJECT;
+			return targetStatusGroup.getType() === git.StatusType.WORKING_TREE ? tree.DRAG_OVER_ACCEPT_BUBBLE_DOWN(false) : tree.DRAG_OVER_REJECT;
 		} else if (targetElement instanceof gitmodel.FileStatus) {
 			var targetStatus = <git.IFileStatus>targetElement;
 			return targetStatus.getType() === git.StatusType.WORKING_TREE ? tree.DRAG_OVER_ACCEPT_BUBBLE_UP : tree.DRAG_OVER_REJECT;
@@ -629,7 +630,7 @@ export class DragAndDrop extends ActionContainer implements tree.IDragAndDrop {
 	private onDragMerge(targetElement: any): tree.IDragOverReaction {
 		if (targetElement instanceof gitmodel.StatusGroup) {
 			var targetStatusGroup = <git.IStatusGroup>targetElement;
-			return targetStatusGroup.getType() === git.StatusType.INDEX ? tree.DRAG_OVER_ACCEPT_BUBBLE_DOWN : tree.DRAG_OVER_REJECT;
+			return targetStatusGroup.getType() === git.StatusType.INDEX ? tree.DRAG_OVER_ACCEPT_BUBBLE_DOWN(false) : tree.DRAG_OVER_REJECT;
 		} else if (targetElement instanceof gitmodel.FileStatus) {
 			var targetStatus = <git.IFileStatus>targetElement;
 			return targetStatus.getType() === git.StatusType.INDEX ? tree.DRAG_OVER_ACCEPT_BUBBLE_UP : tree.DRAG_OVER_REJECT;
@@ -691,6 +692,7 @@ export class AccessibilityProvider implements tree.IAccessibilityProvider {
 				case git.StatusType.MERGE: return nls.localize('ariaLabelMerge', "Merge, Git");
 			}
 		}
+		return undefined;
 	}
 }
 
@@ -724,14 +726,14 @@ export class Controller extends treedefaults.DefaultController {
 			var focus = tree.getFocus();
 
 			if (!(focus instanceof gitmodel.FileStatus) || !(element instanceof gitmodel.FileStatus)) {
-				return;
+				return undefined;
 			}
 
 			var focusStatus = <gitmodel.FileStatus>focus;
 			var elementStatus = <gitmodel.FileStatus>element;
 
 			if (focusStatus.getType() !== elementStatus.getType()) {
-				return;
+				return undefined;
 			}
 
 			if (this.canSelect(tree, element)) {
@@ -743,7 +745,7 @@ export class Controller extends treedefaults.DefaultController {
 				}
 			}
 
-			return;
+			return undefined;
 		}
 
 		tree.setFocus(element);
@@ -753,7 +755,7 @@ export class Controller extends treedefaults.DefaultController {
 				tree.toggleSelection(element, { origin: 'mouse', originalEvent: event });
 			}
 
-			return;
+			return undefined;
 		}
 
 		return super.onLeftClick(tree, element, event);

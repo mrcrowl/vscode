@@ -7,7 +7,7 @@
 
 import * as assert from 'assert';
 import { setUnexpectedErrorHandler, errorHandler } from 'vs/base/common/errors';
-import { TestInstantiationService } from 'vs/test/utils/instantiationTestUtils';
+import { TestInstantiationService } from 'vs/platform/instantiation/test/common/instantiationServiceMock';
 import URI from 'vs/base/common/uri';
 import { TPromise } from 'vs/base/common/winjs.base';
 import * as types from 'vs/workbench/api/node/extHostTypes';
@@ -78,6 +78,7 @@ suite('ExtHostLanguageFeatureCommands', function () {
 			_serviceBrand: IModelService,
 			getModel(): any { return model; },
 			createModel(): any { throw new Error(); },
+			updateModel(): any { throw new Error(); },
 			setMode(): any { throw new Error(); },
 			destroyModel(): any { throw new Error(); },
 			getModels(): any { throw new Error(); },
@@ -92,7 +93,7 @@ suite('ExtHostLanguageFeatureCommands', function () {
 		extHostDocuments.$acceptModelAdd({
 			isDirty: false,
 			versionId: model.getVersionId(),
-			modeId: model.getModeId(),
+			modeId: model.getLanguageIdentifier().language,
 			url: model.uri,
 			value: {
 				EOL: model.getEOL(),
@@ -100,6 +101,7 @@ suite('ExtHostLanguageFeatureCommands', function () {
 				BOM: '',
 				length: -1,
 				containsRTL: false,
+				isBasicASCII: false,
 				options: {
 					tabSize: 4,
 					insertSpaces: true,

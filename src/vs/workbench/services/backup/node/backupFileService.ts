@@ -10,13 +10,16 @@ import * as crypto from 'crypto';
 import pfs = require('vs/base/node/pfs');
 import * as platform from 'vs/base/common/platform';
 import Uri from 'vs/base/common/uri';
+import { Queue } from 'vs/base/common/async';
 import { IBackupFileService, BACKUP_FILE_UPDATE_OPTIONS } from 'vs/workbench/services/backup/common/backup';
 import { IBackupService } from 'vs/platform/backup/common/backup';
 import { IEnvironmentService } from 'vs/platform/environment/common/environment';
 import { IFileService } from 'vs/platform/files/common/files';
 import { TPromise } from 'vs/base/common/winjs.base';
 import { readToMatchingString } from 'vs/base/node/stream';
-import { IRawTextContent } from 'vs/workbench/services/textfile/common/textfiles';
+import { ITextSource2 } from 'vs/editor/common/editorCommon';
+import { TextModel } from 'vs/editor/common/model/textModel';
+import { IWindowService } from 'vs/platform/windows/common/windows';
 
 export interface IBackupFilesModel {
 	resolve(backupRoot: string): TPromise<IBackupFilesModel>;
@@ -25,6 +28,7 @@ export interface IBackupFilesModel {
 	has(resource: Uri, versionId?: number): boolean;
 	get(): Uri[];
 	remove(resource: Uri): void;
+	count(): number;
 	clear(): void;
 }
 
@@ -53,6 +57,10 @@ export class BackupFilesModel implements IBackupFilesModel {
 
 	public add(resource: Uri, versionId = 0): void {
 		this.cache[resource.toString()] = versionId;
+	}
+
+	public count(): number {
+		return Object.keys(this.cache).length;
 	}
 
 	public has(resource: Uri, versionId?: number): boolean {
@@ -87,21 +95,28 @@ export class BackupFileService implements IBackupFileService {
 
 	private static readonly META_MARKER = '\n';
 
+	private isShuttingDown: boolean;
 	private backupWorkspacePath: string;
 	private ready: TPromise<IBackupFilesModel>;
+	/**
+	 * Ensure IO operations on individual files are performed in order, this could otherwise lead
+	 * to unexpected behavior when backups are persisted and discarded in the wrong order.
+	 */
+	private ioOperationQueues: { [path: string]: Queue<void> };
 
 	constructor(
-		windowId: number,
 		@IEnvironmentService private environmentService: IEnvironmentService,
 		@IFileService private fileService: IFileService,
+		@IWindowService windowService: IWindowService,
 		@IBackupService private backupService: IBackupService
 	) {
-		this.ready = this.init(windowId);
+		this.isShuttingDown = false;
+		this.ready = this.init(windowService.getCurrentWindowId());
+		this.ioOperationQueues = {};
 	}
 
 	private get backupEnabled(): boolean {
-		// Hot exit is disabled when doing extension development
-		return !this.environmentService.isExtensionDevelopment;
+		return !this.environmentService.isExtensionDevelopment; // Hot exit is disabled when doing extension development
 	}
 
 	private init(windowId: number): TPromise<IBackupFilesModel> {
@@ -113,7 +128,14 @@ export class BackupFileService implements IBackupFileService {
 
 		return this.backupService.getBackupPath(windowId).then(backupPath => {
 			this.backupWorkspacePath = backupPath;
+
 			return model.resolve(this.backupWorkspacePath);
+		});
+	}
+
+	public hasBackups(): TPromise<boolean> {
+		return this.ready.then(model => {
+			return model.count() > 0;
 		});
 	}
 
@@ -141,6 +163,10 @@ export class BackupFileService implements IBackupFileService {
 	}
 
 	public backupResource(resource: Uri, content: string, versionId?: number): TPromise<void> {
+		if (this.isShuttingDown) {
+			return TPromise.as(void 0);
+		}
+
 		return this.ready.then(model => {
 			const backupResource = this.getBackupResource(resource);
 			if (!backupResource) {
@@ -154,7 +180,9 @@ export class BackupFileService implements IBackupFileService {
 			// Add metadata to top of file
 			content = `${resource.toString()}${BackupFileService.META_MARKER}${content}`;
 
-			return this.fileService.updateContent(backupResource, content, BACKUP_FILE_UPDATE_OPTIONS).then(() => model.add(backupResource, versionId));
+			return this.getResourceIOQueue(backupResource).queue(() => {
+				return this.fileService.updateContent(backupResource, content, BACKUP_FILE_UPDATE_OPTIONS).then(() => model.add(backupResource, versionId));
+			});
 		});
 	}
 
@@ -165,17 +193,34 @@ export class BackupFileService implements IBackupFileService {
 				return void 0;
 			}
 
-			return this.fileService.del(backupResource).then(() => model.remove(backupResource));
+			return this.getResourceIOQueue(backupResource).queue(() => {
+				return pfs.del(backupResource.fsPath).then(() => model.remove(backupResource));
+			});
 		});
 	}
 
+	private getResourceIOQueue(resource: Uri) {
+		const key = resource.toString();
+		if (!this.ioOperationQueues[key]) {
+			const queue = new Queue<void>();
+			queue.onFinished(() => {
+				queue.dispose();
+				delete this.ioOperationQueues[key];
+			});
+			this.ioOperationQueues[key] = queue;
+		}
+		return this.ioOperationQueues[key];
+	}
+
 	public discardAllWorkspaceBackups(): TPromise<void> {
+		this.isShuttingDown = true;
+
 		return this.ready.then(model => {
 			if (!this.backupEnabled) {
 				return void 0;
 			}
 
-			return this.fileService.del(Uri.file(this.backupWorkspacePath)).then(() => model.clear());
+			return pfs.del(this.backupWorkspacePath).then(() => model.clear());
 		});
 	}
 
@@ -199,8 +244,8 @@ export class BackupFileService implements IBackupFileService {
 		});
 	}
 
-	public parseBackupContent(rawText: IRawTextContent): string {
-		return rawText.value.lines.slice(1).join('\n'); // The first line of a backup text file is the file name
+	public parseBackupContent(textSource: ITextSource2): string {
+		return textSource.lines.slice(1).join(TextModel.getEndOfLine(textSource) || ''); // The first line of a backup text file is the file name
 	}
 
 	protected getBackupResource(resource: Uri): Uri {

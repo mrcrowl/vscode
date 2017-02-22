@@ -22,6 +22,7 @@ import { ScrollbarVisibility } from 'vs/base/common/scrollable';
 import { HeightMap, IViewItem } from 'vs/base/parts/tree/browser/treeViewModel';
 import _ = require('vs/base/parts/tree/browser/tree');
 import { KeyCode } from 'vs/base/common/keyCodes';
+import Event, { Emitter } from 'vs/base/common/event';
 
 export interface IRow {
 	element: HTMLElement;
@@ -439,6 +440,12 @@ export class TreeView extends HeightMap {
 	private highlightedItemWasDraggable: boolean;
 	private onHiddenScrollTop: number;
 
+	private _onDOMFocus: Emitter<void> = new Emitter<void>();
+	get onDOMFocus(): Event<void> { return this._onDOMFocus.event; }
+
+	private _onDOMBlur: Emitter<void> = new Emitter<void>();
+	get onDOMBlur(): Event<void> { return this._onDOMBlur.event; }
+
 	constructor(context: _.ITreeContext, container: HTMLElement) {
 		super();
 
@@ -495,7 +502,7 @@ export class TreeView extends HeightMap {
 			this.emit('scroll', e); // TODO@Joao: is anyone interested in this event?
 		});
 
-		if (Browser.isIE11orEarlier) {
+		if (Browser.isIE) {
 			this.wrapper.style.msTouchAction = 'none';
 			this.wrapper.style.msContentZooming = 'none';
 		} else {
@@ -504,6 +511,9 @@ export class TreeView extends HeightMap {
 
 		this.rowsContainer = document.createElement('div');
 		this.rowsContainer.className = 'monaco-tree-rows';
+		if (context.options.showTwistie) {
+			this.rowsContainer.className += ' show-twisties';
+		}
 
 		var focusTracker = DOM.trackFocus(this.domNode);
 		focusTracker.addFocusListener(() => this.onFocus());
@@ -519,7 +529,7 @@ export class TreeView extends HeightMap {
 		this.viewListeners.push(DOM.addDisposableListener(this.wrapper, Touch.EventType.Tap, (e) => this.onTap(e)));
 		this.viewListeners.push(DOM.addDisposableListener(this.wrapper, Touch.EventType.Change, (e) => this.onTouchChange(e)));
 
-		if (Browser.isIE11orEarlier) {
+		if (Browser.isIE) {
 			this.viewListeners.push(DOM.addDisposableListener(this.wrapper, 'MSPointerDown', (e) => this.onMsPointerDown(e)));
 			this.viewListeners.push(DOM.addDisposableListener(this.wrapper, 'MSGestureTap', (e) => this.onMsGestureTap(e)));
 
@@ -788,7 +798,8 @@ export class TreeView extends HeightMap {
 	}
 
 	public get viewHeight() {
-		return this.scrollableElement.getHeight();
+		const scrollState = this.scrollableElement.getScrollState();
+		return scrollState.height;
 	}
 
 	public set viewHeight(viewHeight: number) {
@@ -799,7 +810,8 @@ export class TreeView extends HeightMap {
 	}
 
 	public get scrollTop(): number {
-		return this.scrollableElement.getScrollTop();
+		const scrollState = this.scrollableElement.getScrollState();
+		return scrollState.scrollTop;
 	}
 
 	public set scrollTop(scrollTop: number) {
@@ -1116,7 +1128,7 @@ export class TreeView extends HeightMap {
 			return;
 		}
 
-		if (Browser.isIE10orLater && Date.now() - this.lastClickTimeStamp < 300) {
+		if (Browser.isIE && Date.now() - this.lastClickTimeStamp < 300) {
 			// IE10+ doesn't set the detail property correctly. While IE10 simply
 			// counts the number of clicks, IE11 reports always 1. To align with
 			// other browser, we set the value to 2 if clicks events come in a 300ms
@@ -1197,7 +1209,7 @@ export class TreeView extends HeightMap {
 
 	private onContextMenu(keyboardEvent: KeyboardEvent): void;
 	private onContextMenu(mouseEvent: MouseEvent): void;
-	private onContextMenu(event: Event): void {
+	private onContextMenu(event: KeyboardEvent | MouseEvent): void {
 		var resultEvent: _.ContextMenuEvent;
 		var element: any;
 
@@ -1350,7 +1362,7 @@ export class TreeView extends HeightMap {
 
 		var viewItem = this.getItemAround(event.target);
 
-		if (!viewItem) {
+		if (!viewItem || (event.posx === 0 && event.posy === 0 && event.browserEvent.type === DOM.EventType.DRAG_LEAVE)) {
 			// dragging outside of tree
 
 			if (this.currentDropTarget) {
@@ -1465,11 +1477,11 @@ export class TreeView extends HeightMap {
 					}
 				}
 
-				this.currentDropPromise = WinJS.TPromise.timeout(500).then(() => {
-					return this.context.tree.expand(this.currentDropElement).then(() => {
-						this.shouldInvalidateDropReaction = true;
-					});
-				});
+				if (reaction.autoExpand) {
+					this.currentDropPromise = WinJS.TPromise.timeout(500)
+						.then(() => this.context.tree.expand(this.currentDropElement))
+						.then(() => this.shouldInvalidateDropReaction = true);
+				}
 			}
 		}
 
@@ -1510,6 +1522,8 @@ export class TreeView extends HeightMap {
 		if (!this.context.options.alwaysFocused) {
 			DOM.addClass(this.domNode, 'focused');
 		}
+
+		this._onDOMFocus.fire();
 	}
 
 	private onBlur(): void {
@@ -1518,6 +1532,8 @@ export class TreeView extends HeightMap {
 		}
 
 		this.domNode.removeAttribute('aria-activedescendant'); // ARIA
+
+		this._onDOMBlur.fire();
 	}
 
 	// MS specific DOM Events
@@ -1591,6 +1607,7 @@ export class TreeView extends HeightMap {
 				return null;
 			}
 		} while (element = element.parentElement);
+		return undefined;
 	}
 
 	// Cleanup
@@ -1610,6 +1627,9 @@ export class TreeView extends HeightMap {
 		this.modelListeners = null;
 
 		this.viewListeners = Lifecycle.dispose(this.viewListeners);
+
+		this._onDOMFocus.dispose();
+		this._onDOMBlur.dispose();
 
 		if (this.domNode.parentNode) {
 			this.domNode.parentNode.removeChild(this.domNode);

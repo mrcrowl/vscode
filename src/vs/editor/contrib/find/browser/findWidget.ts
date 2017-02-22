@@ -43,7 +43,7 @@ const NLS_REPLACE_ALL_BTN_LABEL = nls.localize('label.replaceAllButton', "Replac
 const NLS_TOGGLE_REPLACE_MODE_BTN_LABEL = nls.localize('label.toggleReplaceButton', "Toggle Replace mode");
 const NLS_MATCHES_COUNT_LIMIT_TITLE = nls.localize('title.matchesCountLimit', "Only the first 999 results are highlighted, but all find operations work on the entire text.");
 const NLS_MATCHES_LOCATION = nls.localize('label.matchesLocation', "{0} of {1}");
-const NLS_NO_RESULTS = nls.localize('label.noResults', "No results");
+const NLS_NO_RESULTS = nls.localize('label.noResults', "No Results");
 
 let MAX_MATCHES_COUNT_WIDTH = 69;
 const WIDGET_FIXED_WIDTH = 411 - 69;
@@ -276,14 +276,14 @@ export class FindWidget extends Widget implements IOverlayWidget {
 
 	/**
 	 * If 'selection find' is ON we should not disable the button (its function is to cancel 'selection find').
-	 * If 'selection find' is OFF we enable the button only if there is a multi line selection.
+	 * If 'selection find' is OFF we enable the button only if there is a selection.
 	 */
 	private _updateToggleSelectionFindButton(): void {
 		let selection = this._codeEditor.getSelection();
-		let isMultiLineSelection = selection ? (selection.startLineNumber !== selection.endLineNumber) : false;
+		let isSelection = selection ? (selection.startLineNumber !== selection.endLineNumber || selection.startColumn !== selection.endColumn) : false;
 		let isChecked = this._toggleSelectionFind.checked;
 
-		this._toggleSelectionFind.setEnabled(this._isVisible && (isChecked || isMultiLineSelection));
+		this._toggleSelectionFind.setEnabled(this._isVisible && (isChecked || isSelection));
 	}
 
 	private _updateButtons(): void {
@@ -354,9 +354,13 @@ export class FindWidget extends Widget implements IOverlayWidget {
 		this._replaceInputBox.focus();
 	}
 
+	public highlightFindOptions(): void {
+		this._findInput.highlightFindOptions();
+	}
+
 	private _onFindInputKeyDown(e: IKeyboardEvent): void {
 
-		switch (e.asKeybinding()) {
+		switch (e.toKeybinding().value) {
 			case KeyCode.Enter:
 				this._codeEditor.getAction(FIND_IDS.NextMatchFindAction).run().done(null, onUnexpectedError);
 				e.preventDefault();
@@ -385,7 +389,7 @@ export class FindWidget extends Widget implements IOverlayWidget {
 
 	private _onReplaceInputKeyDown(e: IKeyboardEvent): void {
 
-		switch (e.asKeybinding()) {
+		switch (e.toKeybinding().value) {
 			case KeyCode.Enter:
 				this._controller.replace();
 				e.preventDefault();
@@ -416,11 +420,11 @@ export class FindWidget extends Widget implements IOverlayWidget {
 	// ----- initialization
 
 	private _keybindingLabelFor(actionId: string): string {
-		let keybindings = this._keybindingService.lookupKeybindings(actionId);
-		if (keybindings.length === 0) {
+		let [kb] = this._keybindingService.lookupKeybindings(actionId);
+		if (!kb) {
 			return '';
 		}
-		return ' (' + this._keybindingService.getLabelFor(keybindings[0]) + ')';
+		return ` (${this._keybindingService.getLabelFor(kb)})`;
 	}
 
 	private _buildFindPart(): HTMLElement {

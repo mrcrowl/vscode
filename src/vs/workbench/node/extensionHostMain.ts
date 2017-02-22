@@ -9,7 +9,7 @@ import nls = require('vs/nls');
 import pfs = require('vs/base/node/pfs');
 import { TPromise } from 'vs/base/common/winjs.base';
 import paths = require('vs/base/common/paths');
-import { IMainProcessExtHostIPC } from 'vs/platform/extensions/common/ipcRemoteCom';
+import { IRemoteCom } from 'vs/platform/extensions/common/ipcRemoteCom';
 import { ExtHostExtensionService } from 'vs/workbench/api/node/extHostExtensionService';
 import { ExtHostThreadService } from 'vs/workbench/services/thread/common/extHostThreadService';
 import { RemoteTelemetryService } from 'vs/workbench/api/node/extHostTelemetry';
@@ -20,7 +20,7 @@ import * as errors from 'vs/base/common/errors';
 const nativeExit = process.exit.bind(process);
 process.exit = function () {
 	const err = new Error('An extension called process.exit() and this was prevented.');
-	console.warn((<any>err).stack);
+	console.warn(err.stack);
 };
 export function exit(code?: number) {
 	nativeExit(code);
@@ -37,7 +37,7 @@ export class ExtensionHostMain {
 	private _environment: IEnvironment;
 	private _extensionService: ExtHostExtensionService;
 
-	constructor(remoteCom: IMainProcessExtHostIPC, initData: IInitData) {
+	constructor(remoteCom: IRemoteCom, initData: IInitData) {
 		// services
 		this._environment = initData.environment;
 		this._contextService = new WorkspaceContextService(initData.contextService.workspace);

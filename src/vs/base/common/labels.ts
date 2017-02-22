@@ -7,8 +7,8 @@
 import URI from 'vs/base/common/uri';
 import platform = require('vs/base/common/platform');
 import types = require('vs/base/common/types');
-import strings = require('vs/base/common/strings');
-import paths = require('vs/base/common/paths');
+import { nativeSep, isEqualOrParent, normalize } from 'vs/base/common/paths';
+import { endsWith, ltrim } from 'vs/base/common/strings';
 
 export interface ILabelProvider {
 
@@ -44,19 +44,19 @@ export function getPathLabel(resource: URI | string, basePathProvider?: URI | st
 
 	const basepath = basePathProvider && getPath(basePathProvider);
 
-	if (basepath && paths.isEqualOrParent(absolutePath, basepath)) {
+	if (basepath && isEqualOrParent(absolutePath, basepath)) {
 		if (basepath === absolutePath) {
 			return ''; // no label if pathes are identical
 		}
 
-		return paths.normalize(strings.ltrim(absolutePath.substr(basepath.length), paths.nativeSep), true);
+		return normalize(ltrim(absolutePath.substr(basepath.length), nativeSep), true);
 	}
 
 	if (platform.isWindows && absolutePath && absolutePath[1] === ':') {
-		return paths.normalize(absolutePath.charAt(0).toUpperCase() + absolutePath.slice(1), true); // convert c:\something => C:\something
+		return normalize(absolutePath.charAt(0).toUpperCase() + absolutePath.slice(1), true); // convert c:\something => C:\something
 	}
 
-	return paths.normalize(absolutePath, true);
+	return normalize(absolutePath, true);
 }
 
 function getPath(arg1: URI | string | IWorkspaceProvider): string {
@@ -74,4 +74,194 @@ function getPath(arg1: URI | string | IWorkspaceProvider): string {
 	}
 
 	return (<URI>arg1).fsPath;
+}
+
+/**
+ * Shortens the paths but keeps them easy to distinguish.
+ * Replaces not important parts with ellipsis.
+ * Every shorten path matches only one original path and vice versa.
+ */
+const ellipsis = '\u2026';
+const unc = '\\\\';
+export function shorten(paths: string[]): string[] {
+	const shortenedPaths: string[] = new Array(paths.length);
+
+	// for every path
+	let match = false;
+	for (let pathIndex = 0; pathIndex < paths.length; pathIndex++) {
+		let path = paths[pathIndex];
+
+		if (path === '') {
+			shortenedPaths[pathIndex] = '.';
+			continue;
+		}
+
+		if (!path) {
+			shortenedPaths[pathIndex] = path;
+			continue;
+		}
+
+		match = true;
+
+		// trim for now and concatenate unc path (e.g. \\network) or root path (/etc) later
+		let prefix = '';
+		if (path.indexOf(unc) === 0) {
+			prefix = path.substr(0, path.indexOf(unc) + unc.length);
+			path = path.substr(path.indexOf(unc) + unc.length);
+		} else if (path.indexOf(nativeSep) === 0) {
+			prefix = path.substr(0, path.indexOf(nativeSep) + nativeSep.length);
+			path = path.substr(path.indexOf(nativeSep) + nativeSep.length);
+		}
+
+		// pick the first shortest subpath found
+		const segments: string[] = path.split(nativeSep);
+		for (let subpathLength = 1; match && subpathLength <= segments.length; subpathLength++) {
+			for (let start = segments.length - subpathLength; match && start >= 0; start--) {
+				match = false;
+				let subpath = segments.slice(start, start + subpathLength).join(nativeSep);
+
+				// that is unique to any other path
+				for (let otherPathIndex = 0; !match && otherPathIndex < paths.length; otherPathIndex++) {
+
+					// suffix subpath treated specially as we consider no match 'x' and 'x/...'
+					if (otherPathIndex !== pathIndex && paths[otherPathIndex] && paths[otherPathIndex].indexOf(subpath) > -1) {
+						const isSubpathEnding: boolean = (start + subpathLength === segments.length);
+						const isOtherPathEnding: boolean = endsWith(paths[otherPathIndex], subpath);
+
+						match = !isSubpathEnding || isOtherPathEnding;
+					}
+				}
+
+				// found unique subpath
+				if (!match) {
+					let result = '';
+
+					// preserve disk drive or root prefix
+					if (endsWith(segments[0], ':') || prefix !== '') {
+						if (start === 1) {
+							// extend subpath to include disk drive prefix
+							start = 0;
+							subpathLength++;
+							subpath = segments[0] + nativeSep + subpath;
+						}
+
+						if (start > 0) {
+							result = segments[0] + nativeSep;
+						}
+
+						result = prefix + result;
+					}
+
+					// add ellipsis at the beginning if neeeded
+					if (start > 0) {
+						result = result + ellipsis + nativeSep;
+					}
+
+					result = result + subpath;
+
+					// add ellipsis at the end if needed
+					if (start + subpathLength < segments.length) {
+						result = result + nativeSep + ellipsis;
+					}
+
+					shortenedPaths[pathIndex] = result;
+				}
+			}
+		}
+
+		if (match) {
+			shortenedPaths[pathIndex] = path; // use full path if no unique subpaths found
+		}
+	}
+
+	return shortenedPaths;
+}
+
+export interface ISeparator {
+	label: string;
+}
+
+enum Type {
+	TEXT,
+	VARIABLE,
+	SEPARATOR
+}
+
+interface ISegment {
+	value: string;
+	type: Type;
+}
+
+/**
+ * Helper to insert values for specific template variables into the string. E.g. "this $(is) a $(template)" can be
+ * passed to this function together with an object that maps "is" and "template" to strings to have them replaced.
+ * @param value string to which templating is applied
+ * @param values the values of the templates to use
+ */
+export function template(template: string, values: { [key: string]: string | ISeparator } = Object.create(null)): string {
+	const segments: ISegment[] = [];
+
+	let inVariable = false;
+	let char: string;
+	let curVal = '';
+	for (let i = 0; i < template.length; i++) {
+		char = template[i];
+
+		// Beginning of variable
+		if (char === '$' || (inVariable && char === '{')) {
+			if (curVal) {
+				segments.push({ value: curVal, type: Type.TEXT });
+			}
+
+			curVal = '';
+			inVariable = true;
+		}
+
+		// End of variable
+		else if (char === '}' && inVariable) {
+			const resolved = values[curVal];
+
+			// Variable
+			if (typeof resolved === 'string') {
+				if (resolved.length) {
+					segments.push({ value: resolved, type: Type.VARIABLE });
+				}
+			}
+
+			// Separator
+			else if (resolved) {
+				const prevSegment = segments[segments.length - 1];
+				if (!prevSegment || prevSegment.type !== Type.SEPARATOR) {
+					segments.push({ value: resolved.label, type: Type.SEPARATOR }); // prevent duplicate separators
+				}
+			}
+
+			curVal = '';
+			inVariable = false;
+		}
+
+		// Text or Variable Name
+		else {
+			curVal += char;
+		}
+	}
+
+	// Tail
+	if (curVal && !inVariable) {
+		segments.push({ value: curVal, type: Type.TEXT });
+	}
+
+	return segments.filter((segment, index) => {
+
+		// Only keep separator if we have values to the left and right
+		if (segment.type === Type.SEPARATOR) {
+			const left = segments[index - 1];
+			const right = segments[index + 1];
+
+			return [left, right].every(segment => segment && segment.type === Type.VARIABLE && segment.value.length > 0);
+		}
+
+		// accept any TEXT and VARIABLE
+		return true;
+	}).map(segment => segment.value).join('');
 }

@@ -20,8 +20,8 @@ import { EnvironmentService } from 'vs/platform/environment/node/environmentServ
 import { IBackupService } from 'vs/platform/backup/common/backup';
 import { parseArgs } from 'vs/platform/environment/node/argv';
 import { TextModel } from 'vs/editor/common/model/textModel';
-import { IRawTextContent } from 'vs/workbench/services/textfile/common/textfiles';
 import { TPromise } from 'vs/base/common/winjs.base';
+import { TestWindowService } from 'vs/workbench/test/workbenchTestServices';
 
 class TestEnvironmentService extends EnvironmentService {
 
@@ -49,14 +49,14 @@ const untitledBackupPath = path.join(workspaceBackupPath, 'untitled', crypto.cre
 
 class TestBackupFileService extends BackupFileService {
 	constructor(workspace: Uri, backupHome: string, workspacesJsonPath: string) {
-		const fileService = new FileService(workspace.fsPath, { disableWatcher: true }, null);
+		const fileService = new FileService(workspace.fsPath, { disableWatcher: true });
 		const environmentService = new TestEnvironmentService(backupHome, workspacesJsonPath);
 		const backupService: IBackupService = {
 			_serviceBrand: null,
 			getBackupPath: () => TPromise.as(workspaceBackupPath)
 		};
 
-		super(1, environmentService, fileService, backupService);
+		super(environmentService, fileService, new TestWindowService(), backupService);
 	}
 
 	public getBackupResource(resource: Uri): Uri {
@@ -126,7 +126,10 @@ suite('BackupFileService', () => {
 				service = new TestBackupFileService(workspaceResource, backupHome, workspacesJsonPath);
 				service.hasBackup(fooFile).then(exists2 => {
 					assert.equal(exists2, true);
-					done();
+					return service.hasBackups().then(hasBackups => {
+						assert.ok(hasBackups);
+						done();
+					});
 				});
 			});
 		});
@@ -202,6 +205,15 @@ suite('BackupFileService', () => {
 				});
 			});
 		});
+
+		test('should disable further backups', function (done: () => void) {
+			service.discardAllWorkspaceBackups().then(() => {
+				service.backupResource(untitledFile, 'test').then(() => {
+					assert.equal(fs.existsSync(workspaceBackupPath), false);
+					done();
+				});
+			});
+		});
 	});
 
 	suite('getWorkspaceFileBackups', () => {
@@ -240,16 +252,8 @@ suite('BackupFileService', () => {
 
 	test('parseBackupContent', () => {
 		test('should separate metadata from content', () => {
-			const rawTextContent: IRawTextContent = {
-				resource: null,
-				name: null,
-				mtime: null,
-				etag: null,
-				encoding: null,
-				value: TextModel.toRawText('metadata\ncontent', TextModel.DEFAULT_CREATION_OPTIONS),
-				valueLogicalHash: null
-			};
-			assert.equal(service.parseBackupContent(rawTextContent), 'content');
+			const textSource = TextModel.toTextSource('metadata\ncontent');
+			assert.equal(service.parseBackupContent(textSource), 'content');
 		});
 	});
 });

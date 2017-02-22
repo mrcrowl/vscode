@@ -59,11 +59,11 @@ export function setProperty(text: string, path: JSONPath, value: any, formatting
 				return withFormatting(text, { offset: removeBegin, length: removeEnd - removeBegin, content: '' }, formattingOptions);
 			} else {
 				// set value of existing property
-				return [{ offset: existing.offset, length: existing.length, content: JSON.stringify(value) }];
+				return withFormatting(text, { offset: existing.offset, length: existing.length, content: JSON.stringify(value) }, formattingOptions);
 			}
 		} else {
 			if (value === void 0) { // delete
-				throw new Error(`Property ${lastSegment} does not exist.`);
+				return []; // property does not exist, nothing to do
 			}
 			let newProperty = `${JSON.stringify(lastSegment)}: ${JSON.stringify(value)}`;
 			let index = getInsertionIndex ? getInsertionIndex(parent.children.map(p => p.children[0].value)) : parent.children.length;

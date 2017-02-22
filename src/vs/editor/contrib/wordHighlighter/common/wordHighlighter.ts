@@ -32,10 +32,12 @@ export function getOccurrencesAtPosition(model: editorCommon.IReadOnlyModel, pos
 						foundResult = true;
 						return data;
 					}
+					return undefined;
 				}, err => {
 					onUnexpectedExternalError(err);
 				});
 			}
+			return undefined;
 		};
 	})).then(values => {
 		return values[0];
@@ -100,7 +102,7 @@ class WordHighlighter {
 
 		// Cancel any renderDecorationsTimer
 		if (this.renderDecorationsTimer !== -1) {
-			window.clearTimeout(this.renderDecorationsTimer);
+			clearTimeout(this.renderDecorationsTimer);
 			this.renderDecorationsTimer = -1;
 		}
 
@@ -190,7 +192,7 @@ class WordHighlighter {
 			if (this.workerRequestCompleted && this.renderDecorationsTimer !== -1) {
 				// case b)
 				// Delay the firing of renderDecorationsTimer by an extra 250 ms
-				window.clearTimeout(this.renderDecorationsTimer);
+				clearTimeout(this.renderDecorationsTimer);
 				this.renderDecorationsTimer = -1;
 				this._beginRenderDecorations();
 			}
@@ -226,7 +228,7 @@ class WordHighlighter {
 			this.renderDecorations();
 		} else {
 			// Asyncrhonous
-			this.renderDecorationsTimer = window.setTimeout(() => {
+			this.renderDecorationsTimer = setTimeout(() => {
 				this.renderDecorations();
 			}, (minimumRenderTime - currentTime));
 		}

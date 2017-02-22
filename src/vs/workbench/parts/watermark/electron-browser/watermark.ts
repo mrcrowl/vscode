@@ -19,8 +19,8 @@ import { ILifecycleService } from 'vs/platform/lifecycle/common/lifecycle';
 import { GlobalQuickOpenAction } from 'vs/workbench/browser/parts/quickopen/quickopen.contribution';
 import { KeybindingsReferenceAction, OpenRecentAction } from 'vs/workbench/electron-browser/actions';
 import { ShowRecommendedKeymapExtensionsAction } from 'vs/workbench/parts/extensions/browser/extensionsActions';
-import { GlobalNewUntitledFileAction } from 'vs/workbench/parts/files/browser/fileActions';
-import { OpenFolderAction, OpenFileAction, OpenFileFolderAction } from 'vs/workbench/parts/files/electron-browser/electronFileActions';
+import { GlobalNewUntitledFileAction, OpenFileAction } from 'vs/workbench/parts/files/browser/fileActions';
+import { OpenFolderAction, OpenFileFolderAction } from 'vs/workbench/browser/actions/fileActions';
 import { ShowAllCommandsAction } from 'vs/workbench/parts/quickopen/browser/commandsHandler';
 import { Parts, IPartService } from 'vs/workbench/services/part/common/partService';
 import { StartAction } from 'vs/workbench/parts/debug/browser/debugActions';
@@ -155,7 +155,7 @@ export class WatermarkContribution implements IWorkbenchContribution {
 			.div({ 'class': 'watermark' });
 		const box = $(watermark)
 			.div({ 'class': 'watermark-box' });
-		const folder = !!this.contextService.getWorkspace();
+		const folder = this.contextService.hasWorkspace();
 		const newUser = this.telemetryService.getExperiments().showNewUserWatermark;
 		const selected = (newUser ? newUserEntries : (folder ? folderEntries : noFolderEntries))
 			.filter(entry => !('mac' in entry) || entry.mac === isMacintosh);
@@ -169,15 +169,21 @@ export class WatermarkContribution implements IWorkbenchContribution {
 						entry.ids
 							.map(id => this.keybindingService.lookupKeybindings(id).slice(0, 1)
 								.map(k => `<span class="shortcuts">${this.keybindingService.getLabelFor(k)}</span>`)
-								.join('') || UNBOUND)
+								.join('') || `<span class="unbound">${UNBOUND}</span>`)
 							.join(' / ')
 					));
 				});
 			});
 		};
+		const layout = () => {
+			const { height } = container.getBoundingClientRect();
+			container.classList[height <= 478 ? 'add' : 'remove']('max-height-478px');
+		};
 		update();
-		watermark.build(container.firstChild as HTMLElement, 0);
+		watermark.build(container.firstElementChild as HTMLElement, 0);
+		layout();
 		this.toDispose.push(this.keybindingService.onDidUpdateKeybindings(update));
+		this.toDispose.push(this.partService.onEditorLayout(layout));
 	}
 
 	public dispose(): void {

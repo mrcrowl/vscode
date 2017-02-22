@@ -7,6 +7,7 @@
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { TPromise } from 'vs/base/common/winjs.base';
 import Event from 'vs/base/common/event';
+import { ConfigurationTarget } from 'vs/workbench/services/configuration/common/configurationEditing';
 
 export let IThemeService = createDecorator<IThemeService>('themeService');
 
@@ -14,36 +15,53 @@ export const VS_LIGHT_THEME = 'vs';
 export const VS_DARK_THEME = 'vs-dark';
 export const VS_HC_THEME = 'hc-black';
 
+export const COLOR_THEME_SETTING = 'workbench.colorTheme';
+export const ICON_THEME_SETTING = 'workbench.iconTheme';
+
+export interface IColorTheme {
+	readonly id: string;
+	readonly label: string;
+	readonly settingsId: string;
+	readonly description?: string;
+	readonly isLoaded: boolean;
+	readonly settings?: IThemeSetting[];
+
+	isLightTheme(): boolean;
+	isDarkTheme(): boolean;
+	getSyntaxThemeId(): string;
+	getBaseThemeId(): string;
+}
+
+export interface IFileIconTheme {
+	readonly id: string;
+	readonly label: string;
+	readonly settingsId: string;
+	readonly description?: string;
+	readonly isLoaded: boolean;
+	readonly hasFileIcons?: boolean;
+	readonly hasFolderIcons?: boolean;
+}
+
 export interface IThemeService {
 	_serviceBrand: any;
-	setColorTheme(themeId: string, broadcastToAllWindows: boolean): TPromise<boolean>;
-	getColorTheme(): string;
-	getColorThemes(): TPromise<IThemeData[]>;
-	onDidColorThemeChange: Event<string>;
+	setColorTheme(themeId: string, settingsTarget: ConfigurationTarget): TPromise<IColorTheme>;
+	getColorTheme(): IColorTheme;
+	getColorThemes(): TPromise<IColorTheme[]>;
+	onDidColorThemeChange: Event<IColorTheme>;
 
-	setFileIconTheme(iconThemeId: string, broadcastToAllWindows: boolean): TPromise<boolean>;
-	getFileIconTheme(): string;
-	getFileIconThemes(): TPromise<IThemeData[]>;
-}
-
-export interface IThemeData {
-	id: string;
-	label: string;
-	description?: string;
-	path: string;
-}
-
-export interface IThemeDocument {
-	name: string;
-	include: string;
-	settings: IThemeSetting[];
+	setFileIconTheme(iconThemeId: string, settingsTarget: ConfigurationTarget): TPromise<IFileIconTheme>;
+	getFileIconTheme(): IFileIconTheme;
+	getFileIconThemes(): TPromise<IFileIconTheme[]>;
+	onDidFileIconThemeChange: Event<IFileIconTheme>;
 }
 
 export interface IThemeSetting {
 	name?: string;
-	scope?: string[];
-	settings: IThemeSettingStyle[];
+	scope?: string | string[];
+	settings: IThemeSettingStyle;
 }
 
 export interface IThemeSettingStyle {
+	foreground?: string;
+	background?: string;
 }

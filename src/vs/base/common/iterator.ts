@@ -24,7 +24,7 @@ export class ArrayIterator<T> implements IIterator<T> {
 	}
 
 	public first(): T {
-		this.index = this.start - 1;
+		this.index = this.start;
 		return this.current();
 	}
 
@@ -88,6 +88,7 @@ export interface INavigator<T> extends IIterator<T> {
 	parent(): T;
 	first(): T;
 	last(): T;
+	next(): T;
 }
 
 export class MappedNavigator<T, R> extends MappedIterator<T, R> implements INavigator<R> {
@@ -101,4 +102,5 @@ export class MappedNavigator<T, R> extends MappedIterator<T, R> implements INavi
 	parent() { return this.fn(this.navigator.parent()); }
 	first() { return this.fn(this.navigator.first()); }
 	last() { return this.fn(this.navigator.last()); }
+	next() { return this.fn(this.navigator.next()); }
 }

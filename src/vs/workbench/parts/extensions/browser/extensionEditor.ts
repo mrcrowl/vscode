@@ -33,17 +33,18 @@ import { IConfigurationService } from 'vs/platform/configuration/common/configur
 import { ITemplateData } from 'vs/workbench/parts/extensions/browser/extensionsList';
 import { RatingsWidget, InstallWidget } from 'vs/workbench/parts/extensions/browser/extensionsWidgets';
 import { EditorOptions } from 'vs/workbench/common/editor';
-import product from 'vs/platform/product';
 import { ActionBar } from 'vs/base/browser/ui/actionbar/actionbar';
 import { CombinedInstallAction, UpdateAction, EnableAction, DisableAction, BuiltinStatusLabelAction, ReloadAction } from 'vs/workbench/parts/extensions/browser/extensionsActions';
 import WebView from 'vs/workbench/parts/html/browser/webview';
-import { Keybinding } from 'vs/base/common/keybinding';
+import { Keybinding } from 'vs/base/common/keyCodes';
+import { KeybindingLabels } from 'vs/base/common/keybinding';
 import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
 import { DomScrollableElement } from 'vs/base/browser/ui/scrollbar/scrollableElement';
 import { IMessageService } from 'vs/platform/message/common/message';
 import { IOpenerService } from 'vs/platform/opener/common/opener';
 import { Tree } from 'vs/base/parts/tree/browser/treeImpl';
 import { Position } from 'vs/platform/editor/common/editor';
+import { IListService } from 'vs/platform/list/browser/listService';
 
 function renderBody(body: string): string {
 	return `<!DOCTYPE html>
@@ -154,7 +155,8 @@ export class ExtensionEditor extends BaseEditor {
 		@IThemeService private themeService: IThemeService,
 		@IKeybindingService private keybindingService: IKeybindingService,
 		@IMessageService private messageService: IMessageService,
-		@IOpenerService private openerService: IOpenerService
+		@IOpenerService private openerService: IOpenerService,
+		@IListService private listService: IListService
 	) {
 		super(ExtensionEditor.ID, telemetryService);
 		this._highlight = null;
@@ -240,11 +242,9 @@ export class ExtensionEditor extends BaseEditor {
 		this.publisher.textContent = extension.publisherDisplayName;
 		this.description.textContent = extension.description;
 
-		if (product.extensionsGallery) {
-			const extensionUrl = `${product.extensionsGallery.itemUrl}?itemName=${extension.publisher}.${extension.name}`;
-
-			this.name.onclick = finalHandler(() => window.open(extensionUrl));
-			this.rating.onclick = finalHandler(() => window.open(`${extensionUrl}#review-details`));
+		if (extension.url) {
+			this.name.onclick = finalHandler(() => window.open(extension.url));
+			this.rating.onclick = finalHandler(() => window.open(`${extension.url}#review-details`));
 			this.publisher.onclick = finalHandler(() => {
 				this.viewletService.openViewlet(VIEWLET_ID, true)
 					.then(viewlet => viewlet as IExtensionsViewlet)
@@ -327,7 +327,7 @@ export class ExtensionEditor extends BaseEditor {
 				webview.contents = [body];
 
 				webview.onDidClickLink(link => this.openerService.open(link), null, this.contentDisposables);
-				this.themeService.onDidColorThemeChange(themeId => webview.style(themeId), null, this.contentDisposables);
+				this.themeService.onDidColorThemeChange(theme => webview.style(theme), null, this.contentDisposables);
 				this.contentDisposables.push(webview);
 			})
 			.then(null, () => {
@@ -355,12 +355,12 @@ export class ExtensionEditor extends BaseEditor {
 				this.contentDisposables.push(toDisposable(removeLayoutParticipant));
 
 				const renders = [
-					ExtensionEditor.renderSettings(content, manifest, layout),
+					this.renderSettings(content, manifest, layout),
 					this.renderCommands(content, manifest, layout),
-					ExtensionEditor.renderLanguages(content, manifest, layout),
-					ExtensionEditor.renderThemes(content, manifest, layout),
-					ExtensionEditor.renderJSONValidation(content, manifest, layout),
-					ExtensionEditor.renderDebuggers(content, manifest, layout)
+					this.renderLanguages(content, manifest, layout),
+					this.renderThemes(content, manifest, layout),
+					this.renderJSONValidation(content, manifest, layout),
+					this.renderDebuggers(content, manifest, layout)
 				];
 
 				const isEmpty = !renders.reduce((v, r) => r || v, false);
@@ -390,10 +390,11 @@ export class ExtensionEditor extends BaseEditor {
 			append(this.content, scrollableContent.getDomNode());
 			this.contentDisposables.push(scrollableContent);
 
-			const tree = ExtensionEditor.renderDependencies(content, extensionDependencies, this.instantiationService);
+			const tree = this.renderDependencies(content, extensionDependencies);
 			const layout = () => {
 				scrollableContent.scanDomNode();
-				tree.layout(scrollableContent.getHeight());
+				const scrollState = scrollableContent.getScrollState();
+				tree.layout(scrollState.height);
 			};
 			const removeLayoutParticipant = arrays.insert(this.layoutParticipants, { layout });
 			this.contentDisposables.push(toDisposable(removeLayoutParticipant));
@@ -408,22 +409,32 @@ export class ExtensionEditor extends BaseEditor {
 		});
 	}
 
-	private static renderDependencies(container: HTMLElement, extensionDependencies: IExtensionDependencies, instantiationService: IInstantiationService): Tree {
-		const renderer = instantiationService.createInstance(Renderer);
-		const controller = instantiationService.createInstance(Controller);
+	private renderDependencies(container: HTMLElement, extensionDependencies: IExtensionDependencies): Tree {
+		const renderer = this.instantiationService.createInstance(Renderer);
+		const controller = this.instantiationService.createInstance(Controller);
 		const tree = new Tree(container, {
 			dataSource: new DataSource(),
 			renderer,
 			controller
 		}, {
 				indentPixels: 40,
-				twistiePixels: 20
+				twistiePixels: 20,
+				keyboardSupport: false
 			});
 		tree.setInput(extensionDependencies);
+
+		this.contentDisposables.push(tree.addListener2('selection', event => {
+			if (event && event.payload && event.payload.origin === 'keyboard') {
+				controller.openExtension(tree, false);
+			}
+		}));
+
+		this.contentDisposables.push(this.listService.register(tree));
+
 		return tree;
 	}
 
-	private static renderSettings(container: HTMLElement, manifest: IExtensionManifest, onDetailsToggle: Function): boolean {
+	private renderSettings(container: HTMLElement, manifest: IExtensionManifest, onDetailsToggle: Function): boolean {
 		const contributes = manifest.contributes;
 		const configuration = contributes && contributes.configuration;
 		const properties = configuration && configuration.properties;
@@ -453,7 +464,7 @@ export class ExtensionEditor extends BaseEditor {
 		return true;
 	}
 
-	private static renderDebuggers(container: HTMLElement, manifest: IExtensionManifest, onDetailsToggle: Function): boolean {
+	private renderDebuggers(container: HTMLElement, manifest: IExtensionManifest, onDetailsToggle: Function): boolean {
 		const contributes = manifest.contributes;
 		const contrib = contributes && contributes.debuggers || [];
 
@@ -473,7 +484,7 @@ export class ExtensionEditor extends BaseEditor {
 		return true;
 	}
 
-	private static renderThemes(container: HTMLElement, manifest: IExtensionManifest, onDetailsToggle: Function): boolean {
+	private renderThemes(container: HTMLElement, manifest: IExtensionManifest, onDetailsToggle: Function): boolean {
 		const contributes = manifest.contributes;
 		const contrib = contributes && contributes.themes || [];
 
@@ -490,7 +501,7 @@ export class ExtensionEditor extends BaseEditor {
 		return true;
 	}
 
-	private static renderJSONValidation(container: HTMLElement, manifest: IExtensionManifest, onDetailsToggle: Function): boolean {
+	private renderJSONValidation(container: HTMLElement, manifest: IExtensionManifest, onDetailsToggle: Function): boolean {
 		const contributes = manifest.contributes;
 		const contrib = contributes && contributes.jsonValidation || [];
 
@@ -581,7 +592,7 @@ export class ExtensionEditor extends BaseEditor {
 		return true;
 	}
 
-	private static renderLanguages(container: HTMLElement, manifest: IExtensionManifest, onDetailsToggle: Function): boolean {
+	private renderLanguages(container: HTMLElement, manifest: IExtensionManifest, onDetailsToggle: Function): boolean {
 		const contributes = manifest.contributes;
 		const rawLanguages = contributes && contributes.languages || [];
 		const languages = rawLanguages.map(l => ({
@@ -659,7 +670,7 @@ export class ExtensionEditor extends BaseEditor {
 			case 'darwin': key = rawKeyBinding.mac; break;
 		}
 
-		const keyBinding = new Keybinding(Keybinding.fromUserSettingsLabel(key || rawKeyBinding.key));
+		const keyBinding = new Keybinding(KeybindingLabels.fromUserSettingsLabel(key || rawKeyBinding.key));
 		const result = this.keybindingService.getLabelFor(keyBinding);
 		return result === 'unknown' ? null : result;
 	}

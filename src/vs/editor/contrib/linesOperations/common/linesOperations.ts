@@ -10,7 +10,7 @@ import { SortLinesCommand } from 'vs/editor/contrib/linesOperations/common/sortL
 import { EditOperation } from 'vs/editor/common/core/editOperation';
 import { TrimTrailingWhitespaceCommand } from 'vs/editor/common/commands/trimTrailingWhitespaceCommand';
 import { EditorContextKeys, Handler, ICommand, ICommonCodeEditor, IIdentifiedSingleEditOperation } from 'vs/editor/common/editorCommon';
-import { ReplaceCommand, ReplaceCommandThatPreservesSelection, ReplaceCommandWithOffsetCursorState } from 'vs/editor/common/commands/replaceCommand';
+import { ReplaceCommand, ReplaceCommandThatPreservesSelection } from 'vs/editor/common/commands/replaceCommand';
 import { Range } from 'vs/editor/common/core/range';
 import { Selection } from 'vs/editor/common/core/selection';
 import { editorAction, ServicesAccessor, IActionOptions, EditorAction, HandlerEditorAction } from 'vs/editor/common/editorCommonExtensions';
@@ -351,8 +351,45 @@ class InsertLineAfterAction extends HandlerEditorAction {
 	}
 }
 
+export abstract class AbstractDeleteAllToBoundaryAction extends EditorAction {
+	public run(accessor: ServicesAccessor, editor: ICommonCodeEditor): void {
+		const primaryCursor = editor.getSelection();
+		let rangesToDelete = this._getRangesToDelete(editor);
+		// merge overlapping selections
+		let effectiveRanges: Range[] = [];
+
+		for (let i = 0, count = rangesToDelete.length - 1; i < count; i++) {
+			let range = rangesToDelete[i];
+			let nextRange = rangesToDelete[i + 1];
+
+			if (Range.intersectRanges(range, nextRange) === null) {
+				effectiveRanges.push(range);
+			} else {
+				rangesToDelete[i + 1] = Range.plusRange(range, nextRange);
+			}
+		}
+
+		effectiveRanges.push(rangesToDelete[rangesToDelete.length - 1]);
+
+		let endCursorState = this._getEndCursorState(primaryCursor, effectiveRanges);
+		let edits: IIdentifiedSingleEditOperation[] = effectiveRanges.map(range => {
+			endCursorState.push(new Selection(range.startLineNumber, range.startColumn, range.startLineNumber, range.startColumn));
+			return EditOperation.replace(range, '');
+		});
+
+		editor.executeEdits(this.id, edits, endCursorState);
+	}
+
+	/**
+	 * Compute the cursor state after the edit operations were applied.
+	 */
+	protected abstract _getEndCursorState(primaryCursor: Range, rangesToDelete: Range[]): Selection[];
+
+	protected abstract _getRangesToDelete(editor: ICommonCodeEditor): Range[];
+}
+
 @editorAction
-export class DeleteAllLeftAction extends EditorAction {
+export class DeleteAllLeftAction extends AbstractDeleteAllToBoundaryAction {
 	constructor() {
 		super({
 			id: 'deleteAllLeft',
@@ -367,39 +404,99 @@ export class DeleteAllLeftAction extends EditorAction {
 		});
 	}
 
-	public run(accessor: ServicesAccessor, editor: ICommonCodeEditor): void {
-		let selections: Range[] = editor.getSelections();
+	_getEndCursorState(primaryCursor: Range, rangesToDelete: Range[]): Selection[] {
+		let endPrimaryCursor: Range;
+		let endCursorState = [];
 
-		selections.sort(Range.compareRangesUsingStarts);
-		selections = selections.map(selection => {
+		for (let i = 0, len = rangesToDelete.length; i < len; i++) {
+			let range = rangesToDelete[i];
+			let endCursor = new Selection(rangesToDelete[i].startLineNumber, rangesToDelete[i].startColumn, rangesToDelete[i].startLineNumber, rangesToDelete[i].startColumn);
+
+			if (range.intersectRanges(primaryCursor)) {
+				endPrimaryCursor = endCursor;
+			} else {
+				endCursorState.push(endCursor);
+			}
+		}
+
+		if (endPrimaryCursor) {
+			endCursorState.unshift(endPrimaryCursor);
+		}
+
+		return endCursorState;
+	}
+
+	_getRangesToDelete(editor: ICommonCodeEditor): Range[] {
+		let rangesToDelete: Range[] = editor.getSelections();
+
+		rangesToDelete.sort(Range.compareRangesUsingStarts);
+		rangesToDelete = rangesToDelete.map(selection => {
 			if (selection.isEmpty()) {
-				return new Selection(selection.startLineNumber, 1, selection.startLineNumber, selection.startColumn);
+				return new Range(selection.startLineNumber, 1, selection.startLineNumber, selection.startColumn);
 			} else {
 				return selection;
 			}
 		});
 
-		// merge overlapping selections
-		let effectiveRanges: Range[] = [];
+		return rangesToDelete;
+	}
+}
 
-		for (let i = 0, count = selections.length - 1; i < count; i++) {
-			let range = selections[i];
-			let nextRange = selections[i + 1];
+@editorAction
+export class DeleteAllRightAction extends AbstractDeleteAllToBoundaryAction {
+	constructor() {
+		super({
+			id: 'deleteAllRight',
+			label: nls.localize('lines.deleteAllRight', "Delete All Right"),
+			alias: 'Delete All Right',
+			precondition: EditorContextKeys.Writable,
+			kbOpts: {
+				kbExpr: EditorContextKeys.TextFocus,
+				primary: null,
+				mac: { primary: KeyMod.WinCtrl | KeyCode.KEY_K, secondary: [KeyMod.CtrlCmd | KeyCode.Delete] }
+			}
+		});
+	}
 
-			if (Range.intersectRanges(range, nextRange) === null) {
-				effectiveRanges.push(range);
+	_getEndCursorState(primaryCursor: Range, rangesToDelete: Range[]): Selection[] {
+		let endPrimaryCursor: Range;
+		let endCursorState = [];
+		for (let i = 0, len = rangesToDelete.length, offset = 0; i < len; i++) {
+			let range = rangesToDelete[i];
+			let endCursor = new Selection(range.startLineNumber - offset, range.startColumn, range.startLineNumber - offset, range.startColumn);
+
+			if (range.intersectRanges(primaryCursor)) {
+				endPrimaryCursor = endCursor;
 			} else {
-				selections[i + 1] = Range.plusRange(range, nextRange);
+				endCursorState.push(endCursor);
 			}
 		}
 
-		effectiveRanges.push(selections[selections.length - 1]);
+		if (endPrimaryCursor) {
+			endCursorState.unshift(endPrimaryCursor);
+		}
 
-		let edits: IIdentifiedSingleEditOperation[] = effectiveRanges.map(range => {
-			return EditOperation.replace(range, '');
+		return endCursorState;
+	}
+
+	_getRangesToDelete(editor: ICommonCodeEditor): Range[] {
+		let model = editor.getModel();
+
+		let rangesToDelete: Range[] = editor.getSelections().map((sel) => {
+			if (sel.isEmpty()) {
+				const maxColumn = model.getLineMaxColumn(sel.startLineNumber);
+
+				if (sel.startColumn === maxColumn) {
+					return new Range(sel.startLineNumber, sel.startColumn, sel.startLineNumber + 1, 1);
+				} else {
+					return new Range(sel.startLineNumber, sel.startColumn, sel.startLineNumber, maxColumn);
+				}
+			}
+			return sel;
 		});
 
-		editor.executeEdits(this.id, edits);
+		rangesToDelete.sort(Range.compareRangesUsingStarts);
+		return rangesToDelete;
 	}
 }
 
@@ -413,92 +510,141 @@ export class JoinLinesAction extends EditorAction {
 			precondition: EditorContextKeys.Writable,
 			kbOpts: {
 				kbExpr: EditorContextKeys.TextFocus,
-				primary: KeyMod.WinCtrl | KeyCode.KEY_J
+				primary: 0,
+				mac: { primary: KeyMod.WinCtrl | KeyCode.KEY_J }
 			}
 		});
 	}
 
 	public run(accessor: ServicesAccessor, editor: ICommonCodeEditor): void {
-		let selection = editor.getSelection();
+		let selections = editor.getSelections();
+		let primaryCursor = editor.getSelection();
+
+		selections.sort(Range.compareRangesUsingStarts);
+		let reducedSelections: Selection[] = [];
+
+		let lastSelection = selections.reduce((previousValue, currentValue) => {
+			if (previousValue.isEmpty()) {
+				if (previousValue.endLineNumber === currentValue.startLineNumber) {
+					if (primaryCursor.equalsSelection(previousValue)) {
+						primaryCursor = currentValue;
+					}
+					return currentValue;
+				}
+
+				if (currentValue.startLineNumber > previousValue.endLineNumber + 1) {
+					reducedSelections.push(previousValue);
+					return currentValue;
+				} else {
+					return new Selection(previousValue.startLineNumber, previousValue.startColumn, currentValue.endLineNumber, currentValue.endColumn);
+				}
+			} else {
+				if (currentValue.startLineNumber > previousValue.endLineNumber) {
+					reducedSelections.push(previousValue);
+					return currentValue;
+				} else {
+					return new Selection(previousValue.startLineNumber, previousValue.startColumn, currentValue.endLineNumber, currentValue.endColumn);
+				}
+			}
+		});
+
+		reducedSelections.push(lastSelection);
+
 		let model = editor.getModel();
-		let startLineNumber = selection.startLineNumber;
-		let startColumn = 1;
-		let endLineNumber: number,
-			endColumn: number,
-			columnDeltaOffset: number;
+		let edits = [];
+		let endCursorState = [];
+		let endPrimaryCursor = primaryCursor;
+		let lineOffset = 0;
 
-		let selectionEndPositionOffset = model.getLineContent(selection.endLineNumber).length - selection.endColumn;
+		for (let i = 0, len = reducedSelections.length; i < len; i++) {
+			let selection = reducedSelections[i];
+			let startLineNumber = selection.startLineNumber;
+			let startColumn = 1;
+			let endLineNumber: number,
+				endColumn: number,
+				columnDeltaOffset: number;
 
-		if (selection.isEmpty() || selection.startLineNumber === selection.endLineNumber) {
-			let position = selection.getStartPosition();
-			if (position.lineNumber < model.getLineCount()) {
-				endLineNumber = startLineNumber + 1;
+			let selectionEndPositionOffset = model.getLineContent(selection.endLineNumber).length - selection.endColumn;
+
+			if (selection.isEmpty() || selection.startLineNumber === selection.endLineNumber) {
+				let position = selection.getStartPosition();
+				if (position.lineNumber < model.getLineCount()) {
+					endLineNumber = startLineNumber + 1;
+					endColumn = model.getLineMaxColumn(endLineNumber);
+				} else {
+					endLineNumber = position.lineNumber;
+					endColumn = model.getLineMaxColumn(position.lineNumber);
+				}
+			} else {
+				endLineNumber = selection.endLineNumber;
 				endColumn = model.getLineMaxColumn(endLineNumber);
-			} else {
-				endLineNumber = position.lineNumber;
-				endColumn = model.getLineMaxColumn(position.lineNumber);
 			}
-		} else {
-			endLineNumber = selection.endLineNumber;
-			endColumn = model.getLineMaxColumn(endLineNumber);
-		}
 
-		let trimmedLinesContent = model.getLineContent(startLineNumber);
+			let trimmedLinesContent = model.getLineContent(startLineNumber);
 
-		for (let i = startLineNumber + 1; i <= endLineNumber; i++) {
-			let lineText = model.getLineContent(i);
-			let firstNonWhitespaceIdx = model.getLineFirstNonWhitespaceColumn(i);
+			for (let i = startLineNumber + 1; i <= endLineNumber; i++) {
+				let lineText = model.getLineContent(i);
+				let firstNonWhitespaceIdx = model.getLineFirstNonWhitespaceColumn(i);
 
-			if (firstNonWhitespaceIdx >= 1) {
-				let insertSpace = true;
-				if (trimmedLinesContent === '') {
-					insertSpace = false;
-				}
+				if (firstNonWhitespaceIdx >= 1) {
+					let insertSpace = true;
+					if (trimmedLinesContent === '') {
+						insertSpace = false;
+					}
 
-				if (insertSpace && (trimmedLinesContent.charAt(trimmedLinesContent.length - 1) === ' ' ||
-					trimmedLinesContent.charAt(trimmedLinesContent.length - 1) === '\t')) {
-					insertSpace = false;
-					trimmedLinesContent = trimmedLinesContent.replace(/[\s\uFEFF\xA0]+$/g, ' ');
-				}
+					if (insertSpace && (trimmedLinesContent.charAt(trimmedLinesContent.length - 1) === ' ' ||
+						trimmedLinesContent.charAt(trimmedLinesContent.length - 1) === '\t')) {
+						insertSpace = false;
+						trimmedLinesContent = trimmedLinesContent.replace(/[\s\uFEFF\xA0]+$/g, ' ');
+					}
 
-				let lineTextWithoutIndent = lineText.substr(firstNonWhitespaceIdx - 1);
+					let lineTextWithoutIndent = lineText.substr(firstNonWhitespaceIdx - 1);
 
-				trimmedLinesContent += (insertSpace ? ' ' : '') + lineTextWithoutIndent;
+					trimmedLinesContent += (insertSpace ? ' ' : '') + lineTextWithoutIndent;
 
-				if (insertSpace) {
-					columnDeltaOffset = lineTextWithoutIndent.length + 1;
+					if (insertSpace) {
+						columnDeltaOffset = lineTextWithoutIndent.length + 1;
+					} else {
+						columnDeltaOffset = lineTextWithoutIndent.length;
+					}
 				} else {
-					columnDeltaOffset = lineTextWithoutIndent.length;
+					columnDeltaOffset = 0;
 				}
-			} else {
-				columnDeltaOffset = 0;
 			}
-		}
 
-		let deleteSelection = new Range(
-			startLineNumber,
-			startColumn,
-			endLineNumber,
-			endColumn
-		);
+			let deleteSelection = new Range(startLineNumber, startColumn, endLineNumber, endColumn);
 
-		if (!deleteSelection.isEmpty()) {
-			if (selection.isEmpty()) {
-				editor.executeCommand(this.id,
-					new ReplaceCommandWithOffsetCursorState(deleteSelection, trimmedLinesContent, 0, -columnDeltaOffset)
-				);
-			} else {
-				if (selection.startLineNumber === selection.endLineNumber) {
-					editor.executeCommand(this.id,
-						new ReplaceCommandThatPreservesSelection(deleteSelection, trimmedLinesContent, selection)
-					);
+			if (!deleteSelection.isEmpty()) {
+				let resultSelection: Selection;
+
+				if (selection.isEmpty()) {
+					edits.push(EditOperation.replace(deleteSelection, trimmedLinesContent));
+					resultSelection = new Selection(deleteSelection.startLineNumber - lineOffset, trimmedLinesContent.length - columnDeltaOffset + 1, startLineNumber - lineOffset, trimmedLinesContent.length - columnDeltaOffset + 1);
 				} else {
-					editor.executeCommand(this.id, new ReplaceCommand(deleteSelection, trimmedLinesContent));
-					editor.setSelection(new Selection(selection.startLineNumber, selection.startColumn,
-						selection.startLineNumber, trimmedLinesContent.length - selectionEndPositionOffset));
+					if (selection.startLineNumber === selection.endLineNumber) {
+						edits.push(EditOperation.replace(deleteSelection, trimmedLinesContent));
+						resultSelection = new Selection(selection.startLineNumber - lineOffset, selection.startColumn,
+							selection.endLineNumber - lineOffset, selection.endColumn);
+					} else {
+						edits.push(EditOperation.replace(deleteSelection, trimmedLinesContent));
+						resultSelection = new Selection(selection.startLineNumber - lineOffset, selection.startColumn,
+							selection.startLineNumber - lineOffset, trimmedLinesContent.length - selectionEndPositionOffset);
+					}
+				}
+
+				if (Range.intersectRanges(deleteSelection, primaryCursor) !== null) {
+					endPrimaryCursor = resultSelection;
+				} else {
+					endCursorState.push(resultSelection);
 				}
 			}
+
+			lineOffset += deleteSelection.endLineNumber - deleteSelection.startLineNumber;
 		}
+
+		endCursorState.unshift(endPrimaryCursor);
+		editor.executeEdits(this.id, edits, endCursorState);
+
 	}
 }
 
@@ -520,12 +666,26 @@ export class TransposeAction extends EditorAction {
 
 		for (let i = 0, len = selections.length; i < len; i++) {
 			let selection = selections[i];
-			if (selection.isEmpty()) {
-				let cursor = selection.getStartPosition();
-				if (cursor.column > model.getLineContent(cursor.lineNumber).length) {
-					return;
+
+			if (!selection.isEmpty()) {
+				continue;
+			}
+
+			let cursor = selection.getStartPosition();
+			let maxColumn = model.getLineMaxColumn(cursor.lineNumber);
+
+			if (cursor.column >= maxColumn) {
+				if (cursor.lineNumber === model.getLineCount()) {
+					continue;
 				}
 
+				// The cursor is at the end of current line and current line is not empty
+				// then we transpose the character before the cursor and the line break if there is any following line.
+				let deleteSelection = new Range(cursor.lineNumber, Math.max(1, cursor.column - 1), cursor.lineNumber + 1, 1);
+				let chars = model.getValueInRange(deleteSelection).split('').reverse().join('');
+
+				commands.push(new ReplaceCommand(new Selection(cursor.lineNumber, Math.max(1, cursor.column - 1), cursor.lineNumber + 1, 1), chars));
+			} else {
 				let deleteSelection = new Range(cursor.lineNumber, Math.max(1, cursor.column - 1), cursor.lineNumber, cursor.column + 1);
 				let chars = model.getValueInRange(deleteSelection).split('').reverse().join('');
 				commands.push(new ReplaceCommandThatPreservesSelection(deleteSelection, chars,

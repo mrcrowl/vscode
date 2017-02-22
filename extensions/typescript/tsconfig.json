@@ -1,15 +1,19 @@
 {
 	"compileOnSave": true,
 	"compilerOptions": {
-		"target": "es5",
+		"target": "es6",
 		"module": "commonjs",
 		"sourceMap": true,
 		"lib": [
-			"es5",
+			"es6",
 			"es2015.promise"
 		],
 		"outDir": "./out",
-		"strictNullChecks": true
+		"strictNullChecks": true,
+		"noImplicitAny": true,
+		"noImplicitReturns": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true
 	},
 	"exclude": [
 		"node_modules",

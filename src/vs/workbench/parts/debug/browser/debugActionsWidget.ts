@@ -118,7 +118,8 @@ export class DebugActionsWidget implements IWorkbenchContribution {
 				const mouseMoveEvent = new StandardMouseEvent(e);
 				// Prevent default to stop editor selecting text #8524
 				mouseMoveEvent.preventDefault();
-				this.setXCoordinate(mouseMoveEvent.posx);
+				// Reduce x by width of drag handle to reduce jarring #16604
+				this.setXCoordinate(mouseMoveEvent.posx - 14);
 			}).once('mouseup', (e: MouseEvent) => {
 				const mouseMoveEvent = new StandardMouseEvent(e);
 				this.storageService.store(DEBUG_ACTIONS_WIDGET_POSITION_KEY, mouseMoveEvent.posx / window.innerWidth, StorageScope.WORKSPACE);
@@ -141,14 +142,12 @@ export class DebugActionsWidget implements IWorkbenchContribution {
 		if (!this.isVisible) {
 			return;
 		}
-		if (!x) {
+		if (x === undefined) {
 			x = parseFloat(this.storageService.get(DEBUG_ACTIONS_WIDGET_POSITION_KEY, StorageScope.WORKSPACE, '0.5')) * window.innerWidth;
 		}
 
-		const halfWidgetWidth = this.$el.getHTMLElement().clientWidth / 2;
-		x = x + halfWidgetWidth - 16; // take into account half the size of the widget
-		x = Math.max(148, x); // do not allow the widget to overflow on the left
-		x = Math.min(x, window.innerWidth - halfWidgetWidth - 10); // do not allow the widget to overflow on the right
+		const widgetWidth = this.$el.getHTMLElement().clientWidth;
+		x = Math.max(0, Math.min(x, window.innerWidth - widgetWidth)); // do not allow the widget to overflow on the right
 		this.$el.style('left', `${x}px`);
 	}
 
@@ -158,7 +157,7 @@ export class DebugActionsWidget implements IWorkbenchContribution {
 
 	private update(): void {
 		const state = this.debugService.state;
-		if (state === debug.State.Disabled || state === debug.State.Inactive) {
+		if (state === debug.State.Inactive) {
 			return this.hide();
 		}
 
@@ -211,7 +210,7 @@ export class DebugActionsWidget implements IWorkbenchContribution {
 
 		const state = this.debugService.state;
 		const process = this.debugService.getViewModel().focusedProcess;
-		const attached = process && !strings.equalsIgnoreCase(process.session.configuration.type, 'extensionHost') && process.session.requestType === debug.SessionRequestType.ATTACH;
+		const attached = process && strings.equalsIgnoreCase(process.configuration.request, 'attach') && !strings.equalsIgnoreCase(process.configuration.type, 'extensionHost');
 
 		return this.allActions.filter(a => {
 			if (a.id === ContinueAction.ID) {
@@ -221,10 +220,10 @@ export class DebugActionsWidget implements IWorkbenchContribution {
 				return state === debug.State.Running;
 			}
 			if (a.id === StepBackAction.ID) {
-				return process && process.session.configuration.capabilities.supportsStepBack;
+				return process && process.session.capabilities.supportsStepBack;
 			}
 			if (a.id === ReverseContinueAction.ID) {
-				return process && process.session.configuration.capabilities.supportsStepBack;
+				return process && process.session.capabilities.supportsStepBack;
 			}
 			if (a.id === DisconnectAction.ID) {
 				return attached;

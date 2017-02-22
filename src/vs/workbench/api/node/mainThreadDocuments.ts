@@ -8,12 +8,10 @@ import { toErrorMessage } from 'vs/base/common/errorMessage';
 import { EmitterEvent } from 'vs/base/common/eventEmitter';
 import { IModelService } from 'vs/editor/common/services/modelService';
 import * as editorCommon from 'vs/editor/common/editorCommon';
+import { RawText } from 'vs/editor/common/model/textModel';
 import { IThreadService } from 'vs/workbench/services/thread/common/threadService';
 import URI from 'vs/base/common/uri';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
-import { IEventService } from 'vs/platform/event/common/event';
-import { getResource } from 'vs/workbench/common/editor';
-import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { TextFileModelChangeEvent, ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
 import { TPromise } from 'vs/base/common/winjs.base';
 import { IFileService } from 'vs/platform/files/common/files';
@@ -29,7 +27,6 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 	private _textModelResolverService: ITextModelResolverService;
 	private _textFileService: ITextFileService;
 	private _codeEditorService: ICodeEditorService;
-	private _editorService: IWorkbenchEditorService;
 	private _fileService: IFileService;
 	private _untitledEditorService: IUntitledEditorService;
 	private _toDispose: IDisposable[];
@@ -37,16 +34,13 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 	private _proxy: ExtHostDocumentsShape;
 	private _modelIsSynced: { [modelId: string]: boolean; };
 	private _resourceContentProvider: { [handle: number]: IDisposable };
-	private _virtualDocumentSet: { [resource: string]: boolean };
 
 	constructor(
 		@IThreadService threadService: IThreadService,
 		@IModelService modelService: IModelService,
 		@IModeService modeService: IModeService,
-		@IEventService eventService: IEventService,
 		@ITextFileService textFileService: ITextFileService,
 		@ICodeEditorService codeEditorService: ICodeEditorService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@ITextModelResolverService textModelResolverService: ITextModelResolverService,
 		@IUntitledEditorService untitledEditorService: IUntitledEditorService
@@ -57,7 +51,6 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 		this._textModelResolverService = textModelResolverService;
 		this._textFileService = textFileService;
 		this._codeEditorService = codeEditorService;
-		this._editorService = editorService;
 		this._fileService = fileService;
 		this._untitledEditorService = untitledEditorService;
 		this._proxy = threadService.get(ExtHostContext.ExtHostDocuments);
@@ -84,12 +77,8 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 			}
 		}));
 
-		const handle = setInterval(() => this._runDocumentCleanup(), 1000 * 60 * 3);
-		this._toDispose.push({ dispose() { clearInterval(handle); } });
-
 		this._modelToDisposeMap = Object.create(null);
 		this._resourceContentProvider = Object.create(null);
-		this._virtualDocumentSet = Object.create(null);
 	}
 
 	public dispose(): void {
@@ -118,7 +107,7 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 			url: model.uri,
 			versionId: model.getVersionId(),
 			value: model.toRawText(),
-			modeId: model.getMode().getId(),
+			modeId: model.getLanguageIdentifier().language,
 			isDirty: this._textFileService.isDirty(modelUrl)
 		});
 	}
@@ -129,7 +118,7 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 		if (!this._modelIsSynced[modelUrl.toString()]) {
 			return;
 		}
-		this._proxy.$acceptModelModeChanged(model.uri.toString(), oldModeId, model.getMode().getId());
+		this._proxy.$acceptModelModeChanged(model.uri.toString(), oldModeId, model.getLanguageIdentifier().language);
 	}
 
 	private _onModelRemoved(model: editorCommon.IModel): void {
@@ -185,9 +174,14 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 			if (!success) {
 				return TPromise.wrapError('cannot open ' + uri.toString());
 			}
+			return undefined;
 		}, err => {
 			return TPromise.wrapError('cannot open ' + uri.toString() + '. Detail: ' + toErrorMessage(err));
 		});
+	}
+
+	$tryCreateDocument(options?: { language: string }): TPromise<URI> {
+		return this._doCreateUntitled(void 0, options ? options.language : void 0);
 	}
 
 	private _handleAsResourceInput(uri: URI): TPromise<boolean> {
@@ -206,19 +200,18 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 		return this._fileService.resolveFile(asFileUri).then(stats => {
 			// don't create a new file ontop of an existing file
 			return TPromise.wrapError<boolean>('file already exists on disk');
-		}, err => {
-			let input = this._untitledEditorService.createOrGet(asFileUri);
-			return input.resolve(true).then(model => {
-				if (input.getResource().toString() !== uri.toString()) {
-					throw new Error(`expected URI ${uri.toString()} BUT GOT ${input.getResource().toString()}`);
-				}
-				if (!this._modelIsSynced[uri.toString()]) {
-					throw new Error(`expected URI ${uri.toString()} to have come to LIFE`);
-				}
-				return this._proxy.$acceptModelDirty(uri.toString()); // mark as dirty
-			}).then(() => {
-				return true;
-			});
+		}, err => this._doCreateUntitled(asFileUri).then(resource => !!resource));
+	}
+
+	private _doCreateUntitled(uri?: URI, modeId?: string): TPromise<URI> {
+		let input = this._untitledEditorService.createOrGet(uri, modeId);
+		return input.resolve(true).then(model => {
+			if (!this._modelIsSynced[input.getResource().toString()]) {
+				throw new Error(`expected URI ${input.getResource().toString()} to have come to LIFE`);
+			}
+			return this._proxy.$acceptModelDirty(input.getResource().toString()); // mark as dirty
+		}).then(() => {
+			return input.getResource();
 		});
 	}
 
@@ -229,11 +222,11 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 			provideTextContent: (uri: URI): TPromise<editorCommon.IModel> => {
 				return this._proxy.$provideTextDocumentContent(handle, uri).then(value => {
 					if (typeof value === 'string') {
-						this._virtualDocumentSet[uri.toString()] = true;
 						const firstLineText = value.substr(0, 1 + value.search(/\r?\n/));
 						const mode = this._modeService.getOrCreateModeByFilenameOrFirstLine(uri.fsPath, firstLineText);
 						return this._modelService.createModel(value, mode, uri);
 					}
+					return undefined;
 				});
 			}
 		});
@@ -247,43 +240,26 @@ export class MainThreadDocuments extends MainThreadDocumentsShape {
 		}
 	}
 
-	$onVirtualDocumentChange(uri: URI, value: string): void {
+	$onVirtualDocumentChange(uri: URI, value: editorCommon.IRawText): void {
 		const model = this._modelService.getModel(uri);
-		if (model) {
-			model.setValue(value);
+		if (!model) {
+			return;
 		}
-	}
+		// fetch the raw text from the ext host but
+		// reuse the current options
+		const {options} = RawText.fromStringWithModelOptions('', model);
+		const raw = <editorCommon.IRawText>{
+			options,
+			lines: value.lines,
+			length: value.length,
+			BOM: value.BOM,
+			EOL: value.EOL,
+			containsRTL: value.containsRTL,
+			isBasicASCII: value.isBasicASCII,
+		};
 
-	private _runDocumentCleanup(): void {
-
-		const toBeDisposed: URI[] = [];
-
-		// list of uris used in editors
-		const activeResources: { [uri: string]: boolean } = Object.create(null);
-		for (const editor of this._codeEditorService.listCodeEditors()) {
-			if (editor.getModel()) {
-				activeResources[editor.getModel().uri.toString()] = true;
-			}
-		}
-
-		for (const workbenchEditor of this._editorService.getVisibleEditors()) {
-			const uri = getResource(workbenchEditor.input);
-			if (uri) {
-				activeResources[uri.toString()] = true;
-			}
-		}
-
-		// intersect with virtual documents
-		for (let uri in this._virtualDocumentSet) {
-			if (!activeResources[uri]) {
-				toBeDisposed.push(URI.parse(uri));
-			}
-		}
-
-		// dispose unused virtual documents
-		for (let resource of toBeDisposed) {
-			this._modelService.destroyModel(resource);
-			delete this._virtualDocumentSet[resource.toString()];
+		if (!model.equals(raw)) {
+			model.setValueFromRawText(raw);
 		}
 	}
 }
