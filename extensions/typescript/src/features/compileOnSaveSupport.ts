@@ -20,15 +20,15 @@ const COMPILED_MESSAGE_DURATION = 3000;
 
 export default class TypeScriptCompileOnSaveSupport {
 	private client: ITypescriptServiceClient;
-	private modeIds: Map<boolean>;
+	private modeIds: Map<string, boolean>;
 	private disposables: Disposable[] = [];
 	private activeBatches: CompileOnSaveMultipleFileBatcher[];
 
 	constructor(client: ITypescriptServiceClient, modeIds: string[]) {
 		this.client = client;
 		this.activeBatches = [];
-		this.modeIds = Object.create(null);
-		modeIds.forEach(modeId => this.modeIds[modeId] = true);
+		this.modeIds = new Map();
+		modeIds.forEach(modeId => this.modeIds.set(modeId, true));
 	}
 
 	public listen() {
@@ -38,7 +38,7 @@ export default class TypeScriptCompileOnSaveSupport {
 
 	public dispose(): void {
 		while (this.disposables.length) {
-			this.disposables.pop().dispose();
+			this.disposables.pop()!.dispose();
 		}
 	}
 
@@ -51,11 +51,11 @@ export default class TypeScriptCompileOnSaveSupport {
 
 		// optimised early exit: no doc, doc not TS, compileOnSave disabled for file
 		if (!document ||
-			!(document.languageId in this.modeIds)) {
+			!this.modeIds.has(document.languageId)) {
 			return;
 		}
 
-		let openBatch: CompileOnSaveMultipleFileBatcher;
+		let openBatch: CompileOnSaveMultipleFileBatcher | undefined;
 		for (let activeBatch of this.activeBatches) {
 			if (activeBatch.open && !activeBatch.expired) {
 				openBatch = activeBatch;
@@ -79,7 +79,7 @@ export default class TypeScriptCompileOnSaveSupport {
 
 	public onDidSaveTextDocument(document: TextDocument) {
 		if (!document ||
-			!(document.languageId in this.modeIds)) {
+			!this.modeIds.has(document.languageId)) {
 			return;
 		}
 
@@ -102,7 +102,7 @@ export default class TypeScriptCompileOnSaveSupport {
 
 		this.client.execute('compileOnSaveAffectedFileList', affectedFileArgs).then(response => {
 			const { body } = response;
-			if (body.length === 0) {
+			if (body.length === 0 && batch) {
 				if (batch.compileMessage) {
 					batch.compileMessage.dispose();
 					batch.compileMessage = null;
@@ -134,11 +134,11 @@ export default class TypeScriptCompileOnSaveSupport {
 
 				if (emit) {
 					const emitArgs: Proto.CompileOnSaveEmitFileRequestArgs = { file: file.filename, projectFileName: file.projectFileName };
-					this.client.execute('compileOnSaveEmitFile', emitArgs).then(emitResponse => {
+					this.client.execute('compileOnSaveEmitFile', emitArgs).then(_ => {
 						if (batch) {
 							batch.notifyEmitComplete(file);
 						}
-					}, reason => {
+					}, _ => {
 						console.error(`Emit failed: ${file.filename}`);
 						if (batch) {
 							batch.notifyEmitComplete(file);
@@ -246,12 +246,12 @@ export default class TypeScriptCompileOnSaveSupport {
 
 class CompileOnSaveMultipleFileBatcher {
 	public readonly id: number;
-	public compileMessage: Disposable;
+	public compileMessage: Disposable | null;
 
 	private creationTimestamp: number;
 	private firstDidSaveTimestamp: number;
-	private pendingSavedDocuments: Map<boolean>;
-	private affectedFilesStatusHash: Map<AffectedFileStatus>;
+	private pendingSavedDocuments: Map<string, boolean>;
+	private affectedFilesStatusHash: Map<string, AffectedFileStatus>;
 	private affectedFilesRemainingEmitCount: number;
 	private allPendingSavesCompleted: boolean;
 	private receivedDidSavesNotifications: boolean;
@@ -259,22 +259,22 @@ class CompileOnSaveMultipleFileBatcher {
 	constructor(id: number) {
 		this.id = id;
 		this.creationTimestamp = Date.now();
-		this.pendingSavedDocuments = Object.create(null);
-		this.affectedFilesStatusHash = Object.create(null);
+		this.pendingSavedDocuments = new Map();
+		this.affectedFilesStatusHash = new Map();
 		this.allPendingSavesCompleted = false;
 		this.receivedDidSavesNotifications = false;
 	}
 
 	public addPendingSave(document: TextDocument) {
 		if (!this.receivedDidSavesNotifications) {
-			this.pendingSavedDocuments[document.fileName] = true;
+			this.pendingSavedDocuments.set(document.fileName, true);
 		} else {
 			console.error('Can\'t add pending save to batch that has received didSave notifications.');
 		}
 	}
 
 	public containsPendingDocumentSave(document: TextDocument): boolean {
-		return document.fileName in this.pendingSavedDocuments;
+		return this.pendingSavedDocuments.has(document.fileName);
 	}
 
 	public notifyDocumentDidSave(document: TextDocument): { first: boolean } {
@@ -285,7 +285,7 @@ class CompileOnSaveMultipleFileBatcher {
 			first = true;
 		}
 
-		delete this.pendingSavedDocuments[document.fileName];
+		this.pendingSavedDocuments.delete(document.fileName);
 		if (Object.keys(this.pendingSavedDocuments).length === 0) {
 			this.allPendingSavesCompleted = true;
 		}
@@ -294,22 +294,22 @@ class CompileOnSaveMultipleFileBatcher {
 	}
 
 	public provideAffectedFiles(affectedFiles: AffectedFile[]) {
-		let affectedFilesHash = Object.create(null);
+		let affectedFilesHash = new Map();
 		for (let file of affectedFiles) {
-			affectedFilesHash[file.key] = { emmitted: false, requested: false };
+			affectedFilesHash.set(file.key, { emmitted: false, requested: false });
 		}
 		this.affectedFilesStatusHash = affectedFilesHash;
 		this.affectedFilesRemainingEmitCount = affectedFiles.length;
 	}
 
 	public shouldRequestEmitForAffectedFile(file: AffectedFile): boolean {
-		if (!(file.key in this.affectedFilesStatusHash)) {
+		if (!this.affectedFilesStatusHash.has(file.key)) {
 			console.warn(`shouldRequestEmitForAffectedFile called for unknown AffectedFile ${file.key}`);
 			return false;
 		}
 
-		let affectedFileStatus = this.affectedFilesStatusHash[file.key];
-		if (affectedFileStatus.requested) {
+		let affectedFileStatus = this.affectedFilesStatusHash.get(file.key);
+		if (affectedFileStatus && affectedFileStatus.requested) {
 			console.log(`Already emitted: ${file}`);
 			return false;
 		}
@@ -318,14 +318,14 @@ class CompileOnSaveMultipleFileBatcher {
 	}
 
 	public notifyEmitComplete(file: AffectedFile) {
-		if (!(file.key in this.affectedFilesStatusHash)) {
+		if (!this.affectedFilesStatusHash.has(file.key)) {
 			console.warn(`notifyEmitComplete called for unknown hash '${file.key}'`);
 			return;
 		}
 
-		let affectedFile = this.affectedFilesStatusHash[file.key];
+		let affectedFile = this.affectedFilesStatusHash.get(file.key);
 
-		if (affectedFile.emmitted) {
+		if (affectedFile && affectedFile.emmitted) {
 			console.warn(`notifyEmitComplete called for already-emmitted file '${file.key}'`);
 			return;
 		}

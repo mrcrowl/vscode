@@ -14,10 +14,9 @@
     "semver": "4.3.6",
     "vscode-extension-telemetry": "^0.0.6",
     "vscode-nls": "^2.0.1",
-    "typescript": "typescript@2.2.1-insiders.20170217"
+    "typescript": "2.2.1"
   },
   "devDependencies": {
-    "vscode": "^1.0.0",
     "@types/node": "^7.0.4",
     "@types/semver": "^5.3.30"
   },
@@ -320,3 +319,4 @@
       }
     ]
   }
+}
