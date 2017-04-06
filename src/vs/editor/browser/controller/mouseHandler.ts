@@ -12,11 +12,11 @@ import { Position } from 'vs/editor/common/core/position';
 import { Selection } from 'vs/editor/common/core/selection';
 import * as editorCommon from 'vs/editor/common/editorCommon';
 import { ViewEventHandler } from 'vs/editor/common/viewModel/viewEventHandler';
-import { MouseTargetFactory } from 'vs/editor/browser/controller/mouseTarget';
+import { MouseTarget, MouseTargetFactory } from 'vs/editor/browser/controller/mouseTarget';
 import * as editorBrowser from 'vs/editor/browser/editorBrowser';
 import { TimeoutTimer, RunOnceScheduler } from 'vs/base/common/async';
 import { ViewContext } from 'vs/editor/common/view/viewContext';
-import { VisibleRange } from 'vs/editor/common/view/renderingContext';
+import { HorizontalRange } from 'vs/editor/common/view/renderingContext';
 import { EditorMouseEventFactory, GlobalEditorMouseMoveMonitor, EditorMouseEvent, createEditorPagePosition, ClientCoordinates } from 'vs/editor/browser/editorDom';
 import { StandardMouseWheelEvent } from 'vs/base/browser/mouseEvent';
 import { EditorZoom } from 'vs/editor/common/config/editorZoom';
@@ -78,16 +78,6 @@ class EventGateKeeper<T> extends Disposable {
 	}
 }
 
-class MousePosition {
-	public position: Position;
-	public mouseColumn: number;
-
-	constructor(position: Position, mouseColumn: number) {
-		this.position = position;
-		this.mouseColumn = mouseColumn;
-	}
-}
-
 export interface IPointerHandlerHelper {
 	viewDomNode: HTMLElement;
 	linesContentDomNode: HTMLElement;
@@ -118,7 +108,7 @@ export interface IPointerHandlerHelper {
 	 */
 	getPositionFromDOMInfo(spanNode: HTMLElement, offset: number): Position;
 
-	visibleRangeForPosition2(lineNumber: number, column: number): VisibleRange;
+	visibleRangeForPosition2(lineNumber: number, column: number): HorizontalRange;
 	getLineWidth(lineNumber: number): number;
 }
 
@@ -403,21 +393,9 @@ class MouseDownOperation extends Disposable {
 		}
 
 		if (this._mouseState.isDragAndDrop) {
-			let target = this._createMouseTarget(e, true);
-			if (!target.position) {
-				target = {
-					element: target.element,
-					type: target.type,
-					position: position.position,
-					mouseColumn: target.mouseColumn,
-					range: target.range,
-					detail: target.detail
-				};
-			}
-
 			this._viewController.emitMouseDrag({
 				event: e,
-				target: target
+				target: position
 			});
 		} else {
 			this._dispatchMouse(position, true);
@@ -440,7 +418,8 @@ class MouseDownOperation extends Disposable {
 		// Overwrite the detail of the MouseEvent, as it will be sent out in an event and contributions might rely on it.
 		e.detail = this._mouseState.count;
 
-		if (this._context.configuration.editor.enableDragAndDrop
+		if (!this._context.configuration.editor.readOnly
+			&& this._context.configuration.editor.dragAndDrop
 			&& !this._mouseState.altKey // we don't support multiple mouse
 			&& e.detail < 2 // only single click on a selection can work
 			&& !this._isActive // the mouse is not down yet
@@ -449,10 +428,6 @@ class MouseDownOperation extends Disposable {
 		) {
 			this._mouseState.isDragAndDrop = true;
 			this._isActive = true;
-			this._viewController.emitMouseDrag({
-				event: e,
-				target: this._createMouseTarget(e, true)
-			});
 
 			this._mouseMoveMonitor.startMonitoring(
 				createMouseMoveEventMerger(null),
@@ -512,35 +487,35 @@ class MouseDownOperation extends Disposable {
 		this._currentSelection = e.selection;
 	}
 
-	private _getPositionOutsideEditor(e: EditorMouseEvent): MousePosition {
+	private _getPositionOutsideEditor(e: EditorMouseEvent): MouseTarget {
 		const editorContent = e.editorPos;
 
 		let mouseColumn = this._getMouseColumn(e);
 
 		if (e.posy < editorContent.y) {
 			let aboveLineNumber = this._viewHelper.getLineNumberAtVerticalOffset(Math.max(this._viewHelper.getScrollTop() - (editorContent.y - e.posy), 0));
-			return new MousePosition(new Position(aboveLineNumber, 1), mouseColumn);
+			return new MouseTarget(null, editorCommon.MouseTargetType.OUTSIDE_EDITOR, mouseColumn, new Position(aboveLineNumber, 1));
 		}
 
 		if (e.posy > editorContent.y + editorContent.height) {
 			let belowLineNumber = this._viewHelper.getLineNumberAtVerticalOffset(this._viewHelper.getScrollTop() + (e.posy - editorContent.y));
-			return new MousePosition(new Position(belowLineNumber, this._context.model.getLineMaxColumn(belowLineNumber)), mouseColumn);
+			return new MouseTarget(null, editorCommon.MouseTargetType.OUTSIDE_EDITOR, mouseColumn, new Position(belowLineNumber, this._context.model.getLineMaxColumn(belowLineNumber)));
 		}
 
 		let possibleLineNumber = this._viewHelper.getLineNumberAtVerticalOffset(this._viewHelper.getScrollTop() + (e.posy - editorContent.y));
 
 		if (e.posx < editorContent.x) {
-			return new MousePosition(new Position(possibleLineNumber, 1), mouseColumn);
+			return new MouseTarget(null, editorCommon.MouseTargetType.OUTSIDE_EDITOR, mouseColumn, new Position(possibleLineNumber, 1));
 		}
 
 		if (e.posx > editorContent.x + editorContent.width) {
-			return new MousePosition(new Position(possibleLineNumber, this._context.model.getLineMaxColumn(possibleLineNumber)), mouseColumn);
+			return new MouseTarget(null, editorCommon.MouseTargetType.OUTSIDE_EDITOR, mouseColumn, new Position(possibleLineNumber, this._context.model.getLineMaxColumn(possibleLineNumber)));
 		}
 
 		return null;
 	}
 
-	private _findMousePosition(e: EditorMouseEvent, testEventTarget: boolean): MousePosition {
+	private _findMousePosition(e: EditorMouseEvent, testEventTarget: boolean): MouseTarget {
 		let positionOutsideEditor = this._getPositionOutsideEditor(e);
 		if (positionOutsideEditor) {
 			return positionOutsideEditor;
@@ -561,17 +536,17 @@ class MouseDownOperation extends Disposable {
 
 			if (positionBefore && positionAfter) {
 				if (positionBefore.isBefore(selectionStart)) {
-					return new MousePosition(positionBefore, t.mouseColumn);
+					return new MouseTarget(t.element, t.type, t.mouseColumn, positionBefore, null, t.detail);
 				} else {
-					return new MousePosition(positionAfter, t.mouseColumn);
+					return new MouseTarget(t.element, t.type, t.mouseColumn, positionAfter, null, t.detail);
 				}
 			}
 		}
 
-		return new MousePosition(hintedPosition, t.mouseColumn);
+		return t;
 	}
 
-	private _dispatchMouse(position: MousePosition, inSelectionMode: boolean): void {
+	private _dispatchMouse(position: MouseTarget, inSelectionMode: boolean): void {
 		this._viewController.dispatchMouse({
 			position: position.position,
 			mouseColumn: position.mouseColumn,

@@ -10,7 +10,7 @@ import { FastDomNode, createFastDomNode } from 'vs/base/browser/fastDomNode';
 import { ClassNames } from 'vs/editor/browser/editorBrowser';
 import { ViewPart } from 'vs/editor/browser/view/viewPart';
 import { ViewContext } from 'vs/editor/common/view/viewContext';
-import { IRenderingContext, IRestrictedRenderingContext } from 'vs/editor/common/view/renderingContext';
+import { RenderingContext, RestrictedRenderingContext } from 'vs/editor/common/view/renderingContext';
 import * as viewEvents from 'vs/editor/common/view/viewEvents';
 
 export class ScrollDecorationViewPart extends ViewPart {
@@ -25,7 +25,8 @@ export class ScrollDecorationViewPart extends ViewPart {
 		super(context);
 
 		this._scrollTop = 0;
-		this._width = this._context.configuration.editor.layoutInfo.width;
+		this._width = 0;
+		this._updateWidth();
 		this._shouldShow = false;
 		this._useShadows = this._context.configuration.editor.viewInfo.scrollbar.useShadows;
 		this._domNode = createFastDomNode(document.createElement('div'));
@@ -44,6 +45,16 @@ export class ScrollDecorationViewPart extends ViewPart {
 		return this._domNode.domNode;
 	}
 
+	private _updateWidth(): boolean {
+		const layoutInfo = this._context.configuration.editor.layoutInfo;
+		let newWidth = layoutInfo.width - layoutInfo.minimapWidth;
+		if (this._width !== newWidth) {
+			this._width = newWidth;
+			return true;
+		}
+		return false;
+	}
+
 	// --- begin event handlers
 
 	public onConfigurationChanged(e: viewEvents.ViewConfigurationChangedEvent): boolean {
@@ -52,10 +63,7 @@ export class ScrollDecorationViewPart extends ViewPart {
 			this._useShadows = this._context.configuration.editor.viewInfo.scrollbar.useShadows;
 		}
 		if (e.layoutInfo) {
-			if (this._width !== this._context.configuration.editor.layoutInfo.width) {
-				this._width = this._context.configuration.editor.layoutInfo.width;
-				shouldRender = true;
-			}
+			shouldRender = this._updateWidth();
 		}
 		return this._updateShouldShow() || shouldRender;
 	}
@@ -66,11 +74,11 @@ export class ScrollDecorationViewPart extends ViewPart {
 
 	// --- end event handlers
 
-	public prepareRender(ctx: IRenderingContext): void {
+	public prepareRender(ctx: RenderingContext): void {
 		// Nothing to read
 	}
 
-	public render(ctx: IRestrictedRenderingContext): void {
+	public render(ctx: RestrictedRenderingContext): void {
 		this._domNode.setWidth(this._width);
 		this._domNode.setClassName(this._shouldShow ? ClassNames.SCROLL_DECORATION : '');
 	}

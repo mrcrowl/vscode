@@ -14,10 +14,16 @@ import { shell, crashReporter, app } from 'electron';
 import Event, { chain } from 'vs/base/common/event';
 import { fromEventEmitter } from 'vs/base/node/event';
 import { IURLService } from 'vs/platform/url/common/url';
+import { ITelemetryData } from 'vs/platform/telemetry/common/telemetry';
 
 // TODO@Joao: remove this dependency, move all implementation to this class
 import { OpenContext } from 'vs/code/common/windows';
 import { IWindowsMainService } from 'vs/code/electron-main/windows';
+
+export interface ISharedProcess {
+	whenReady(): TPromise<void>;
+	toggle(): void;
+}
 
 export class WindowsService implements IWindowsService, IDisposable {
 
@@ -29,6 +35,7 @@ export class WindowsService implements IWindowsService, IDisposable {
 	onWindowFocus: Event<number> = fromEventEmitter(app, 'browser-window-focus', (_, w: Electron.BrowserWindow) => w.id);
 
 	constructor(
+		private sharedProcess: ISharedProcess,
 		@IWindowsMainService private windowsMainService: IWindowsMainService,
 		@IEnvironmentService private environmentService: IEnvironmentService,
 		@IURLService urlService: IURLService
@@ -39,19 +46,19 @@ export class WindowsService implements IWindowsService, IDisposable {
 			.on(this.openFileForURI, this, this.disposables);
 	}
 
-	openFileFolderPicker(windowId: number, forceNewWindow?: boolean): TPromise<void> {
-		this.windowsMainService.openFileFolderPicker(forceNewWindow);
+	openFileFolderPicker(windowId: number, forceNewWindow?: boolean, data?: ITelemetryData): TPromise<void> {
+		this.windowsMainService.openFileFolderPicker(forceNewWindow, data);
 		return TPromise.as(null);
 	}
 
-	openFilePicker(windowId: number, forceNewWindow?: boolean, path?: string): TPromise<void> {
-		this.windowsMainService.openFilePicker(forceNewWindow, path);
+	openFilePicker(windowId: number, forceNewWindow?: boolean, path?: string, data?: ITelemetryData): TPromise<void> {
+		this.windowsMainService.openFilePicker(forceNewWindow, path, undefined, data);
 		return TPromise.as(null);
 	}
 
-	openFolderPicker(windowId: number, forceNewWindow?: boolean): TPromise<void> {
+	openFolderPicker(windowId: number, forceNewWindow?: boolean, data?: ITelemetryData): TPromise<void> {
 		const vscodeWindow = this.windowsMainService.getWindowById(windowId);
-		this.windowsMainService.openFolderPicker(forceNewWindow, vscodeWindow);
+		this.windowsMainService.openFolderPicker(forceNewWindow, vscodeWindow, data);
 
 		return TPromise.as(null);
 	}
@@ -130,6 +137,11 @@ export class WindowsService implements IWindowsService, IDisposable {
 	removeFromRecentlyOpen(paths: string[]): TPromise<void> {
 		this.windowsMainService.removeFromRecentPathsList(paths);
 
+		return TPromise.as(null);
+	}
+
+	clearRecentPathsList(): TPromise<void> {
+		this.windowsMainService.clearRecentPathsList();
 		return TPromise.as(null);
 	}
 
@@ -248,9 +260,8 @@ export class WindowsService implements IWindowsService, IDisposable {
 		return TPromise.as(null);
 	}
 
-	openExternal(url: string): TPromise<void> {
-		shell.openExternal(url);
-		return TPromise.as(null);
+	openExternal(url: string): TPromise<boolean> {
+		return TPromise.as(shell.openExternal(url));
 	}
 
 	startCrashReporter(config: Electron.CrashReporterStartOptions): TPromise<void> {
@@ -260,6 +271,33 @@ export class WindowsService implements IWindowsService, IDisposable {
 
 	quit(): TPromise<void> {
 		this.windowsMainService.quit();
+		return TPromise.as(null);
+	}
+
+	relaunch(options: { addArgs?: string[], removeArgs?: string[] }): TPromise<void> {
+		const args = process.argv.slice(1);
+		if (options.addArgs) {
+			args.push(...options.addArgs);
+		}
+		if (options.removeArgs) {
+			for (const a of options.removeArgs) {
+				const idx = args.indexOf(a);
+				if (idx >= 0) {
+					args.splice(idx, 1);
+				}
+			}
+		}
+		app.quit();
+		app.once('quit', () => app.relaunch({ args }));
+		return TPromise.as(null);
+	}
+
+	whenSharedProcessReady(): TPromise<void> {
+		return this.sharedProcess.whenReady();
+	}
+
+	toggleSharedProcess(): TPromise<void> {
+		this.sharedProcess.toggle();
 		return TPromise.as(null);
 	}
 

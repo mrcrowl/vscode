@@ -65,7 +65,7 @@ export class ListView<T> implements IDisposable {
 		this.items = [];
 		this.itemId = 0;
 		this.rangeMap = new RangeMap();
-		this.renderers = toObject<IRenderer<T, any>, IRenderer<T, any>>(renderers, r => r.templateId);
+		this.renderers = toObject<IRenderer<T, any>>(renderers, r => r.templateId);
 		this.cache = new RowCache(this.renderers);
 
 		this.lastRenderTop = 0;
@@ -83,8 +83,7 @@ export class ListView<T> implements IDisposable {
 			alwaysConsumeMouseWheel: true,
 			horizontal: ScrollbarVisibility.Hidden,
 			vertical: ScrollbarVisibility.Auto,
-			useShadows: getOrDefault(options, o => o.useShadows, DefaultOptions.useShadows),
-			saveLastScrollTimeOnClassName: 'monaco-list-row'
+			useShadows: getOrDefault(options, o => o.useShadows, DefaultOptions.useShadows)
 		});
 
 		this._domNode.appendChild(this.scrollableElement.getDomNode());
@@ -139,6 +138,11 @@ export class ListView<T> implements IDisposable {
 
 	element(index: number): T {
 		return this.items[index].element;
+	}
+
+	domElement(index: number): HTMLElement {
+		const row = this.items[index].row;
+		return row && row.domNode;
 	}
 
 	elementHeight(index: number): number {

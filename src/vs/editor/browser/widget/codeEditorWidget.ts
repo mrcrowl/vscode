@@ -5,8 +5,10 @@
 'use strict';
 
 import 'vs/css!./media/editor';
+import 'vs/editor/common/view/editorColorRegistry'; // initialze editor theming partcicpants
 import 'vs/css!./media/tokens';
 import { onUnexpectedError } from 'vs/base/common/errors';
+import { TPromise } from 'vs/base/common/winjs.base';
 import { IEventEmitter } from 'vs/base/common/eventEmitter';
 import * as browser from 'vs/base/browser/browser';
 import * as dom from 'vs/base/browser/dom';
@@ -94,7 +96,18 @@ export abstract class CodeEditorWidget extends CommonCodeEditor implements edito
 		}
 
 		this._getActions().forEach((action) => {
-			let internalAction = new InternalEditorAction(action, this, this._instantiationService, this._contextKeyService);
+			const internalAction = new InternalEditorAction(
+				action.id,
+				action.label,
+				action.alias,
+				action.precondition,
+				(): void | TPromise<void> => {
+					return this._instantiationService.invokeFunction((accessor) => {
+						return action.runEditorCommand(accessor, this, null);
+					});
+				},
+				this._contextKeyService
+			);
 			this._actions[internalAction.id] = internalAction;
 		});
 
@@ -133,7 +146,8 @@ export abstract class CodeEditorWidget extends CommonCodeEditor implements edito
 			return '';
 		}
 		let content = model.getLineContent(lineNumber);
-		let tokens = model.getLineTokens(lineNumber, false);
+		model.forceTokenization(lineNumber);
+		let tokens = model.getLineTokens(lineNumber);
 		let inflatedTokens = tokens.inflate();
 		let tabSize = model.getOptions().tabSize;
 		return Colorizer.colorizeLine(content, model.mightContainRTL(), inflatedTokens, tabSize);
@@ -156,11 +170,16 @@ export abstract class CodeEditorWidget extends CommonCodeEditor implements edito
 		return this.viewModel.getCenteredRangeInViewport();
 	}
 
-	public getCompletelyVisibleLinesRangeInViewport(): Range {
+	protected _getCompletelyVisibleViewRange(): Range {
 		if (!this.hasView) {
 			return null;
 		}
-		return this._view.getCompletelyVisibleLinesRangeInViewport();
+		return this._view.getCodeEditorHelper().getCompletelyVisibleViewRange();
+	}
+
+	public getCompletelyVisibleLinesRangeInViewport(): Range {
+		const viewRange = this._getCompletelyVisibleViewRange();
+		return this.viewModel.coordinatesConverter.convertViewRangeToModelRange(viewRange);
 	}
 
 	public getScrollWidth(): number {

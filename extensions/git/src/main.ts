@@ -5,12 +5,12 @@
 
 'use strict';
 
-import { ExtensionContext, workspace, window, Disposable, commands, Uri, scm } from 'vscode';
+import { ExtensionContext, workspace, window, Disposable, commands, Uri } from 'vscode';
 import { findGit, Git } from './git';
 import { Model } from './model';
 import { GitSCMProvider } from './scmProvider';
 import { CommandCenter } from './commands';
-import { CheckoutStatusBar, SyncStatusBar } from './statusbar';
+import { StatusBarCommands } from './statusbar';
 import { GitContentProvider } from './contentProvider';
 import { AutoFetcher } from './autofetch';
 import { MergeDecorator } from './merge';
@@ -18,7 +18,7 @@ import { Askpass } from './askpass';
 import TelemetryReporter from 'vscode-extension-telemetry';
 import * as nls from 'vscode-nls';
 
-const localize = nls.config()();
+const localize = nls.config(process.env.VSCODE_NLS_CONFIG)();
 
 async function init(context: ExtensionContext, disposables: Disposable[]): Promise<void> {
 	const { name, version, aiKey } = require(context.asAbsolutePath('./package.json')) as { name: string, version: string, aiKey: string };
@@ -32,26 +32,27 @@ async function init(context: ExtensionContext, disposables: Disposable[]): Promi
 	const enabled = config.get<boolean>('enabled') === true;
 	const workspaceRootPath = workspace.rootPath;
 
+	const pathHint = workspace.getConfiguration('git').get<string>('path');
+	const info = await findGit(pathHint);
+	const askpass = new Askpass();
+	const env = await askpass.getEnv();
+	const git = new Git({ gitPath: info.path, version: info.version, env });
+
 	if (!workspaceRootPath || !enabled) {
-		const commandCenter = new CommandCenter(undefined, outputChannel, telemetryReporter);
+		const commandCenter = new CommandCenter(git, undefined, outputChannel, telemetryReporter);
 		disposables.push(commandCenter);
 		return;
 	}
 
-	const pathHint = workspace.getConfiguration('git').get<string>('path');
-	const info = await findGit(pathHint);
-	const git = new Git({ gitPath: info.path, version: info.version });
-	const askpass = new Askpass();
-	const model = new Model(git, workspaceRootPath, askpass);
+	const model = new Model(git, workspaceRootPath);
 
 	outputChannel.appendLine(localize('using git', "Using git {0} from {1}", info.version, info.path));
 	git.onOutput(str => outputChannel.append(str), null, disposables);
 
-	const commandCenter = new CommandCenter(model, outputChannel, telemetryReporter);
-	const provider = new GitSCMProvider(model, commandCenter);
+	const commandCenter = new CommandCenter(git, model, outputChannel, telemetryReporter);
+	const statusBarCommands = new StatusBarCommands(model);
+	const provider = new GitSCMProvider(model, commandCenter, statusBarCommands);
 	const contentProvider = new GitContentProvider(model);
-	const checkoutStatusBar = new CheckoutStatusBar(model);
-	const syncStatusBar = new SyncStatusBar(model);
 	const autoFetcher = new AutoFetcher(model);
 	const mergeDecorator = new MergeDecorator(model);
 
@@ -59,8 +60,6 @@ async function init(context: ExtensionContext, disposables: Disposable[]): Promi
 		commandCenter,
 		provider,
 		contentProvider,
-		checkoutStatusBar,
-		syncStatusBar,
 		autoFetcher,
 		mergeDecorator,
 		model
@@ -74,15 +73,9 @@ async function init(context: ExtensionContext, disposables: Disposable[]): Promi
 			commands.executeCommand('vscode.open', Uri.parse('https://git-scm.com/'));
 		}
 	}
-
-	scm.inputBox.value = await model.getCommitTemplate();
 }
 
 export function activate(context: ExtensionContext): any {
-	if (!workspace.rootPath) {
-		return;
-	}
-
 	const disposables: Disposable[] = [];
 	context.subscriptions.push(new Disposable(() => Disposable.from(...disposables).dispose()));
 

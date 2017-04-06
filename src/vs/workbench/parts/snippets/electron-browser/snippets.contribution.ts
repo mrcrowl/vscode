@@ -10,7 +10,7 @@ import 'vs/workbench/parts/snippets/electron-browser/tabCompletion';
 
 import nls = require('vs/nls');
 import winjs = require('vs/base/common/winjs.base');
-import paths = require('vs/base/common/paths');
+import { join } from 'path';
 import actions = require('vs/base/common/actions');
 import { SyncActionDescriptor } from 'vs/platform/actions/common/actions';
 import platform = require('vs/platform/platform');
@@ -63,7 +63,7 @@ class OpenSnippetsAction extends actions.Action {
 
 		return this.quickOpenService.pick(picks, { placeHolder: nls.localize('openSnippet.pickLanguage', "Select Language for Snippet") }).then((language) => {
 			if (language) {
-				var snippetPath = paths.join(this.environmentService.appSettingsHome, 'snippets', language.id + '.json');
+				var snippetPath = join(this.environmentService.appSettingsHome, 'snippets', language.id + '.json');
 				return fileExists(snippetPath).then((success) => {
 					if (success) {
 						return this.openFile(snippetPath);
@@ -71,12 +71,12 @@ class OpenSnippetsAction extends actions.Action {
 					var defaultContent = [
 						'{',
 						'/*',
-						'\t // Place your snippets for ' + language.label + ' here. Each snippet is defined under a snippet name and has a prefix, body and ',
-						'\t // description. The prefix is what is used to trigger the snippet and the body will be expanded and inserted. Possible variables are:',
-						'\t // $1, $2 for tab stops, $0 for the final cursor position, and ${1:label}, ${2:another} for placeholders. Placeholders with the ',
-						'\t // same ids are connected.',
-						'\t // Example:',
-						'\t "Print to console": {',
+						'\t// Place your snippets for ' + language.label + ' here. Each snippet is defined under a snippet name and has a prefix, body and ',
+						'\t// description. The prefix is what is used to trigger the snippet and the body will be expanded and inserted. Possible variables are:',
+						'\t// $1, $2 for tab stops, $0 for the final cursor position, and ${1:label}, ${2:another} for placeholders. Placeholders with the ',
+						'\t// same ids are connected.',
+						'\t// Example:',
+						'\t"Print to console": {',
 						'\t\t"prefix": "log",',
 						'\t\t"body": [',
 						'\t\t\t"console.log(\'$1\');",',

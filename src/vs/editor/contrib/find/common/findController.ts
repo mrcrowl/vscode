@@ -205,7 +205,10 @@ export class CommonFindController extends Disposable implements editorCommon.IEd
 		// Overwrite isReplaceRevealed
 		if (opts.forceRevealReplace) {
 			stateChanges.isReplaceRevealed = true;
+		} else if (!this._findWidgetVisible.get()) {
+			stateChanges.isReplaceRevealed = false;
 		}
+
 
 		this._state.change(stateChanges, false);
 
@@ -522,7 +525,7 @@ function multiCursorFind(editor: editorCommon.ICommonCodeEditor, input: IMultiCu
 			searchText = word.word;
 			currentMatch = new Selection(s.startLineNumber, word.startColumn, s.startLineNumber, word.endColumn);
 		} else {
-			searchText = editor.getModel().getValueInRange(s);
+			searchText = editor.getModel().getValueInRange(s).replace(/\r\n/g, '\n');
 		}
 		if (input.changeFindSearchString) {
 			controller.setSearchString(searchText);
@@ -914,10 +917,25 @@ export class SelectionHighlighter extends Disposable implements editorCommon.IEd
 			this.removeDecorations();
 			return;
 		}
+
+		const controller = CommonFindController.get(this.editor);
+		if (!controller) {
+			this.removeDecorations();
+			return;
+		}
+		const findState = controller.getState();
+		const caseSensitive = findState.matchCase;
+
 		let selections = this.editor.getSelections();
 		let firstSelectedText = model.getValueInRange(selections[0]);
+		if (!caseSensitive) {
+			firstSelectedText = firstSelectedText.toLowerCase();
+		}
 		for (let i = 1; i < selections.length; i++) {
 			let selectedText = model.getValueInRange(selections[i]);
+			if (!caseSensitive) {
+				selectedText = selectedText.toLowerCase();
+			}
 			if (firstSelectedText !== selectedText) {
 				// not all selections have the same text
 				this.removeDecorations();

@@ -55,6 +55,7 @@ class MyCompletionItem extends CompletionItem {
 			case PConst.Kind.keyword:
 				return CompletionItemKind.Keyword;
 			case PConst.Kind.const:
+				return CompletionItemKind.Constant;
 			case PConst.Kind.let:
 			case PConst.Kind.variable:
 			case PConst.Kind.localVariable:
@@ -97,7 +98,7 @@ class MyCompletionItem extends CompletionItem {
 
 			case PConst.Kind.file:
 			case PConst.Kind.directory:
-				return ['/', '"', '\''];
+				return ['"', '\''];
 
 			case PConst.Kind.memberGetAccessor:
 			case PConst.Kind.memberSetAccessor:

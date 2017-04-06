@@ -17,15 +17,16 @@ export const enum ViewEventType {
 	ViewDecorationsChanged = 4,
 	ViewFlushed = 5,
 	ViewFocusChanged = 6,
-	ViewLineChanged = 7,
-	ViewLineMappingChanged = 8,
+	ViewLineMappingChanged = 7,
+	ViewLinesChanged = 8,
 	ViewLinesDeleted = 9,
 	ViewLinesInserted = 10,
 	ViewRevealRangeRequest = 11,
 	ViewScrollChanged = 12,
 	ViewScrollRequest = 13,
 	ViewTokensChanged = 14,
-	ViewZonesChanged = 15,
+	ViewTokensColorsChanged = 15,
+	ViewZonesChanged = 16,
 }
 
 export class ViewConfigurationChangedEvent {
@@ -121,26 +122,31 @@ export class ViewFocusChangedEvent {
 	}
 }
 
-export class ViewLineChangedEvent {
-
-	public readonly type = ViewEventType.ViewLineChanged;
-
-	/**
-	 * The line that has changed.
-	 */
-	public readonly lineNumber: number;
-
-	constructor(lineNumber: number) {
-		this.lineNumber = lineNumber;
-	}
-}
-
 export class ViewLineMappingChangedEvent {
 
 	public readonly type = ViewEventType.ViewLineMappingChanged;
 
 	constructor() {
 		// Nothing to do
+	}
+}
+
+export class ViewLinesChangedEvent {
+
+	public readonly type = ViewEventType.ViewLinesChanged;
+
+	/**
+	 * The first line that has changed.
+	 */
+	public readonly fromLineNumber: number;
+	/**
+	 * The last line that has changed.
+	 */
+	public readonly toLineNumber: number;
+
+	constructor(fromLineNumber: number, toLineNumber: number) {
+		this.fromLineNumber = fromLineNumber;
+		this.toLineNumber = toLineNumber;
 	}
 }
 
@@ -270,6 +276,15 @@ export class ViewTokensChangedEvent {
 	}
 }
 
+export class ViewTokensColorsChangedEvent {
+
+	public readonly type = ViewEventType.ViewTokensColorsChanged;
+
+	constructor() {
+		// Nothing to do
+	}
+}
+
 export class ViewZonesChangedEvent {
 
 	public readonly type = ViewEventType.ViewZonesChanged;
@@ -286,7 +301,7 @@ export type ViewEvent = (
 	| ViewDecorationsChangedEvent
 	| ViewFlushedEvent
 	| ViewFocusChangedEvent
-	| ViewLineChangedEvent
+	| ViewLinesChangedEvent
 	| ViewLineMappingChangedEvent
 	| ViewLinesDeletedEvent
 	| ViewLinesInsertedEvent
@@ -294,5 +309,6 @@ export type ViewEvent = (
 	| ViewScrollChangedEvent
 	| ViewScrollRequestEvent
 	| ViewTokensChangedEvent
+	| ViewTokensColorsChangedEvent
 	| ViewZonesChangedEvent
 );

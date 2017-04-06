@@ -9,7 +9,7 @@ import { Position } from 'vs/editor/common/core/position';
 import { CharacterHardWrappingLineMapping, CharacterHardWrappingLineMapperFactory } from 'vs/editor/common/viewModel/characterHardWrappingLineMapper';
 import { PrefixSumComputer } from 'vs/editor/common/viewModel/prefixSumComputer';
 import { ILineMapping, IModel, SplitLine, SplitLinesCollection } from 'vs/editor/common/viewModel/splitLinesCollection';
-import { MockConfiguration } from 'vs/editor/test/common/mocks/mockConfiguration';
+import { TestConfiguration } from 'vs/editor/test/common/mocks/testConfiguration';
 import { Model } from 'vs/editor/common/model/model';
 import { toUint32Array } from 'vs/editor/common/core/uint';
 import * as modes from 'vs/editor/common/modes';
@@ -88,7 +88,7 @@ suite('Editor ViewModel - SplitLinesCollection', () => {
 	});
 
 	function withSplitLinesCollection(text: string, callback: (model: Model, linesCollection: SplitLinesCollection) => void): void {
-		let config = new MockConfiguration({});
+		let config = new TestConfiguration({});
 
 		let hardWrappingLineMapperFactory = new CharacterHardWrappingLineMapperFactory(
 			config.editor.wrappingInfo.wordWrapBreakBeforeCharacters,
@@ -352,7 +352,7 @@ suite('SplitLinesCollection', () => {
 		languageRegistration = modes.TokenizationRegistry.register(LANGUAGE_ID, tokenizationSupport);
 		model = Model.createFromString(_text.join('\n'), undefined, new modes.LanguageIdentifier(LANGUAGE_ID, 0));
 		// force tokenization
-		model.getLineTokens(model.getLineCount(), false);
+		model.forceTokenization(model.getLineCount());
 	});
 
 	teardown(() => {
@@ -425,7 +425,7 @@ suite('SplitLinesCollection', () => {
 	}
 
 	test('getViewLinesData - no wrapping', () => {
-		withSplitLinesCollection(model, -1, (splitLinesCollection) => {
+		withSplitLinesCollection(model, 'off', 0, (splitLinesCollection) => {
 			assert.equal(splitLinesCollection.getViewLineCount(), 8);
 			assert.equal(splitLinesCollection.modelPositionIsVisible(1, 1), true);
 			assert.equal(splitLinesCollection.modelPositionIsVisible(2, 1), true);
@@ -559,7 +559,7 @@ suite('SplitLinesCollection', () => {
 	});
 
 	test('getViewLinesData - with wrapping', () => {
-		withSplitLinesCollection(model, 30, (splitLinesCollection) => {
+		withSplitLinesCollection(model, 'wordWrapColumn', 30, (splitLinesCollection) => {
 			assert.equal(splitLinesCollection.getViewLineCount(), 12);
 			assert.equal(splitLinesCollection.modelPositionIsVisible(1, 1), true);
 			assert.equal(splitLinesCollection.modelPositionIsVisible(2, 1), true);
@@ -731,9 +731,10 @@ suite('SplitLinesCollection', () => {
 		});
 	});
 
-	function withSplitLinesCollection(model: Model, wrappingColumn: number, callback: (splitLinesCollection: SplitLinesCollection) => void): void {
-		let configuration = new MockConfiguration({
-			wrappingColumn: wrappingColumn,
+	function withSplitLinesCollection(model: Model, wordWrap: 'on' | 'off' | 'wordWrapColumn' | 'bounded', wordWrapColumn: number, callback: (splitLinesCollection: SplitLinesCollection) => void): void {
+		let configuration = new TestConfiguration({
+			wordWrap: wordWrap,
+			wordWrapColumn: wordWrapColumn,
 			wrappingIndent: 'indent'
 		});
 
@@ -776,7 +777,7 @@ function createLineMapping(breakingLengths: number[], wrappedLinesPrefix: string
 
 function createModel(text: string): IModel {
 	return {
-		getLineTokens: (lineNumber: number, inaccurateTokensAcceptable?: boolean) => {
+		getLineTokens: (lineNumber: number) => {
 			return null;
 		},
 		getLineContent: (lineNumber: number) => {

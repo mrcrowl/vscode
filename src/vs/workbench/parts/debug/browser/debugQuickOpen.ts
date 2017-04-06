@@ -33,13 +33,13 @@ class DebugEntry extends Model.QuickOpenEntry {
 		}
 		// Run selected debug configuration
 		this.debugService.getViewModel().setSelectedConfigurationName(this.configurationName);
-		this.debugService.createProcess(this.configurationName).done(undefined, errors.onUnexpectedError);
+		this.debugService.startDebugging().done(undefined, errors.onUnexpectedError);
 
 		return true;
 	}
 }
 
-export class QuickOpenHandler extends Quickopen.QuickOpenHandler {
+export class DebugQuickOpenHandler extends Quickopen.QuickOpenHandler {
 
 	constructor(
 		@IQuickOpenService private quickOpenService: IQuickOpenService,

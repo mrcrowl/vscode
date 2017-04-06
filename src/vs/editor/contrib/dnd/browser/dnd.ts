@@ -6,13 +6,15 @@
 'use strict';
 
 import 'vs/css!./dnd';
+import { IMouseEvent } from 'vs/base/browser/mouseEvent';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
-import { ICodeEditor, IEditorMouseEvent } from 'vs/editor/browser/editorBrowser';
+import { isWindows } from 'vs/base/common/platform';
+import { ICodeEditor, IEditorMouseEvent, IMouseTarget } from 'vs/editor/browser/editorBrowser';
 import { editorContribution } from 'vs/editor/browser/editorBrowserExtensions';
 import * as editorCommon from 'vs/editor/common/editorCommon';
 import { Position } from 'vs/editor/common/core/position';
+import { Range } from 'vs/editor/common/core/range';
 import { Selection } from 'vs/editor/common/core/selection';
-import { DragTargetHintWidget } from './dndHintWidget';
 import { DragAndDropCommand } from '../common/dragAndDropCommand';
 
 @editorContribution
@@ -22,9 +24,8 @@ export class DragAndDropController implements editorCommon.IEditorContribution {
 
 	private _editor: ICodeEditor;
 	private _toUnhook: IDisposable[];
-	private _targetWidget: DragTargetHintWidget;
-	private _active: boolean;
 	private _dragSelection: Selection;
+	private _dndDecorationIds: string[];
 
 	static get(editor: editorCommon.ICommonCodeEditor): DragAndDropController {
 		return editor.getContribution<DragAndDropController>(DragAndDropController.ID);
@@ -35,54 +36,105 @@ export class DragAndDropController implements editorCommon.IEditorContribution {
 		this._toUnhook = [];
 		this._toUnhook.push(this._editor.onMouseDrag((e: IEditorMouseEvent) => this._onEditorMouseDrag(e)));
 		this._toUnhook.push(this._editor.onMouseDrop((e: IEditorMouseEvent) => this._onEditorMouseDrop(e)));
-		this._targetWidget = new DragTargetHintWidget(editor);
-		this._active = false;
+		this._dndDecorationIds = [];
+		this._dragSelection = null;
+	}
+
+	private isDragAndCopy(mouseEvent: IMouseEvent) {
+		if (isWindows && mouseEvent.ctrlKey) {
+			return true;
+		}
+
+		if (!isWindows && mouseEvent.altKey) {
+			return true;
+		}
+
+		return false;
 	}
 
 	private _onEditorMouseDrag(mouseEvent: IEditorMouseEvent): void {
 		let target = mouseEvent.target;
 
-		if (this._active) {
-			this._targetWidget.showAt(target.position);
-			this._editor.revealPosition(target.position);
-		} else {
+		if (this._dragSelection === null) {
 			let possibleSelections = this._editor.getSelections().filter(selection => selection.containsPosition(target.position));
-
 			if (possibleSelections.length === 1) {
-				this._active = true;
 				this._dragSelection = possibleSelections[0];
-				this._targetWidget.showAt(target.position);
-				this._editor.revealPosition(target.position);
+			} else {
+				return;
 			}
+		}
+
+		if (this.isDragAndCopy(mouseEvent.event)) {
+			this._editor.updateOptions({
+				mouseStyle: 'copy'
+			});
+		} else {
+			this._editor.updateOptions({
+				mouseStyle: 'default'
+			});
+		}
+
+		if (this._dragSelection.containsPosition(target.position)) {
+			this._removeDecoration();
+		} else {
+			this.showAt(target.position);
 		}
 	}
 
 	private _onEditorMouseDrop(mouseEvent: IEditorMouseEvent): void {
-		if (mouseEvent.target &&
-			(mouseEvent.target.type === editorCommon.MouseTargetType.CONTENT_TEXT || mouseEvent.target.type === editorCommon.MouseTargetType.CONTENT_EMPTY) &&
-			mouseEvent.target.position) {
+		if (mouseEvent.target && (this._hitContent(mouseEvent.target) || this._hitMargin(mouseEvent.target)) && mouseEvent.target.position) {
 			let newCursorPosition = new Position(mouseEvent.target.position.lineNumber, mouseEvent.target.position.column);
 
-			if (this._dragSelection.containsPosition(newCursorPosition)) {
+			if (this._dragSelection === null) {
 				let newSelections = this._editor.getSelections().map(selection => {
-					if (selection.equalsSelection(this._dragSelection)) {
+					if (selection.containsPosition(newCursorPosition)) {
 						return new Selection(newCursorPosition.lineNumber, newCursorPosition.column, newCursorPosition.lineNumber, newCursorPosition.column);
 					} else {
 						return selection;
 					}
 				});
 				this._editor.setSelections(newSelections);
-			} else {
-				this._editor.executeCommand(DragAndDropController.ID, new DragAndDropCommand(this._dragSelection, newCursorPosition));
+			} else if (!this._dragSelection.containsPosition(newCursorPosition)) {
+				this._editor.executeCommand(DragAndDropController.ID, new DragAndDropCommand(this._dragSelection, newCursorPosition, this.isDragAndCopy(mouseEvent.event)));
 			}
 		}
 
-		this._hideWidget();
-		this._active = false;
+		this._editor.updateOptions({
+			mouseStyle: 'text'
+		});
+
+		this._removeDecoration();
+		this._dragSelection = null;
 	}
 
-	private _hideWidget(): void {
-		this._targetWidget.hide();
+	public showAt(position: Position): void {
+		this._editor.changeDecorations(changeAccessor => {
+			let newDecorations: editorCommon.IModelDeltaDecoration[] = [];
+			newDecorations.push({
+				range: new Range(position.lineNumber, position.column, position.lineNumber, position.column),
+				options: { className: 'dnd-target' }
+			});
+
+			this._dndDecorationIds = changeAccessor.deltaDecorations(this._dndDecorationIds, newDecorations);
+		});
+		this._editor.revealPosition(position);
+	}
+
+	private _removeDecoration(): void {
+		this._editor.changeDecorations(changeAccessor => {
+			changeAccessor.deltaDecorations(this._dndDecorationIds, []);
+		});
+	}
+
+	private _hitContent(target: IMouseTarget): boolean {
+		return target.type === editorCommon.MouseTargetType.CONTENT_TEXT ||
+			target.type === editorCommon.MouseTargetType.CONTENT_EMPTY;
+	}
+
+	private _hitMargin(target: IMouseTarget): boolean {
+		return target.type === editorCommon.MouseTargetType.GUTTER_GLYPH_MARGIN ||
+			target.type === editorCommon.MouseTargetType.GUTTER_LINE_NUMBERS ||
+			target.type === editorCommon.MouseTargetType.GUTTER_LINE_DECORATIONS;
 	}
 
 	public getId(): string {
@@ -90,10 +142,7 @@ export class DragAndDropController implements editorCommon.IEditorContribution {
 	}
 
 	public dispose(): void {
+		this._removeDecoration();
 		this._toUnhook = dispose(this._toUnhook);
-		if (this._targetWidget) {
-			this._targetWidget.dispose();
-			this._targetWidget = null;
-		}
 	}
 }

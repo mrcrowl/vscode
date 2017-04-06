@@ -297,9 +297,9 @@ export class CommandsHandler extends QuickOpenHandler {
 
 		for (let i = 0; i < actionDescriptors.length; i++) {
 			const actionDescriptor = actionDescriptors[i];
-			const [keybind] = this.keybindingService.lookupKeybindings(actionDescriptor.id);
-			const keyLabel = keybind ? this.keybindingService.getLabelFor(keybind) : '';
-			const keyAriaLabel = keybind ? this.keybindingService.getAriaLabelFor(keybind) : '';
+			const keybinding = this.keybindingService.lookupKeybinding(actionDescriptor.id);
+			const keyLabel = keybinding ? keybinding.getLabel() : '';
+			const keyAriaLabel = keybinding ? keybinding.getAriaLabel() : '';
 
 			if (actionDescriptor.label) {
 
@@ -329,9 +329,9 @@ export class CommandsHandler extends QuickOpenHandler {
 		for (let i = 0; i < actions.length; i++) {
 			const action = actions[i];
 
-			const [keybind] = this.keybindingService.lookupKeybindings(action.id);
-			const keyLabel = keybind ? this.keybindingService.getLabelFor(keybind) : '';
-			const keyAriaLabel = keybind ? this.keybindingService.getAriaLabelFor(keybind) : '';
+			const keybinding = this.keybindingService.lookupKeybinding(action.id);
+			const keyLabel = keybinding ? keybinding.getLabel() : '';
+			const keyAriaLabel = keybinding ? keybinding.getAriaLabel() : '';
 			const label = action.label;
 
 			if (label) {
@@ -353,17 +353,32 @@ export class CommandsHandler extends QuickOpenHandler {
 		const entries: ActionCommandEntry[] = [];
 
 		for (let action of actions) {
-			const label = action.item.category
-				? nls.localize('cat.title', "{0}: {1}", action.item.category, action.item.title)
-				: action.item.title;
-			const highlights = wordFilter(searchValue, label);
-			if (!highlights) {
-				continue;
+			const title = typeof action.item.title === 'string' ? action.item.title : action.item.title.value;
+			let category, label = title;
+			if (action.item.category) {
+				category = typeof action.item.category === 'string' ? action.item.category : action.item.category.value;
+				label = nls.localize('cat.title', "{0}: {1}", category, title);
 			}
-			const [keybind] = this.keybindingService.lookupKeybindings(action.item.id);
-			const keyLabel = keybind ? this.keybindingService.getLabelFor(keybind) : '';
-			const keyAriaLabel = keybind ? this.keybindingService.getAriaLabelFor(keybind) : '';
-			entries.push(this.instantiationService.createInstance(ActionCommandEntry, keyLabel, keyAriaLabel, label, null, highlights, null, action));
+
+			if (label) {
+				const labelHighlights = wordFilter(searchValue, label);
+				const keybinding = this.keybindingService.lookupKeybinding(action.item.id);
+				const keyLabel = keybinding ? keybinding.getLabel() : '';
+				const keyAriaLabel = keybinding ? keybinding.getAriaLabel() : '';
+				// Add an 'alias' in original language when running in different locale
+				const aliasTitle = (language !== LANGUAGE_DEFAULT && typeof action.item.title !== 'string') ? action.item.title.original : null;
+				const aliasCategory = (language !== LANGUAGE_DEFAULT && category && typeof action.item.category !== 'string') ? action.item.category.original : null;
+				let alias;
+				if (aliasTitle && category) {
+					alias = aliasCategory ? `${aliasCategory}: ${aliasTitle}` : `${category}: ${aliasTitle}`;
+				} else if (aliasTitle) {
+					alias = aliasTitle;
+				}
+				const aliasHighlights = alias ? wordFilter(searchValue, alias) : null;
+				if (labelHighlights || aliasHighlights) {
+					entries.push(this.instantiationService.createInstance(ActionCommandEntry, keyLabel, keyAriaLabel, label, alias, labelHighlights, aliasHighlights, action));
+				}
+			}
 		}
 
 		return entries;

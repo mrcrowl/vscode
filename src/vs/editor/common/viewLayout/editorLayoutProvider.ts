@@ -28,6 +28,8 @@ export interface IEditorLayoutProviderOpts {
 	horizontalScrollbarHeight: number;
 
 	minimap: boolean;
+	minimapRenderCharacters: boolean;
+	minimapMaxColumn: number;
 	pixelRatio: number;
 }
 
@@ -48,6 +50,8 @@ export class EditorLayoutProvider {
 		const scrollbarArrowSize = _opts.scrollbarArrowSize | 0;
 		const horizontalScrollbarHeight = _opts.horizontalScrollbarHeight | 0;
 		const minimap = Boolean(_opts.minimap);
+		const minimapRenderCharacters = Boolean(_opts.minimapRenderCharacters);
+		const minimapMaxColumn = _opts.minimapMaxColumn | 0;
 		const pixelRatio = Number(_opts.pixelRatio);
 
 		let lineNumbersWidth = 0;
@@ -78,10 +82,10 @@ export class EditorLayoutProvider {
 		} else {
 			let minimapCharWidth: number;
 			if (pixelRatio >= 2) {
-				renderMinimap = RenderMinimap.Large;
+				renderMinimap = minimapRenderCharacters ? RenderMinimap.Large : RenderMinimap.LargeBlocks;
 				minimapCharWidth = 2 / pixelRatio;
 			} else {
-				renderMinimap = RenderMinimap.Small;
+				renderMinimap = minimapRenderCharacters ? RenderMinimap.Small : RenderMinimap.SmallBlocks;
 				minimapCharWidth = 1 / pixelRatio;
 			}
 
@@ -98,6 +102,10 @@ export class EditorLayoutProvider {
 			// minimapWidth = ((remainingWidth - verticalScrollbarWidth) * minimapCharWidth) / (typicalHalfwidthCharacterWidth + minimapCharWidth)
 
 			minimapWidth = Math.max(0, Math.floor(((remainingWidth - verticalScrollbarWidth) * minimapCharWidth) / (typicalHalfwidthCharacterWidth + minimapCharWidth)));
+			let minimapColumns = minimapWidth / minimapCharWidth;
+			if (minimapColumns > minimapMaxColumn) {
+				minimapWidth = Math.floor(minimapMaxColumn * minimapCharWidth);
+			}
 			contentWidth = remainingWidth - minimapWidth;
 		}
 

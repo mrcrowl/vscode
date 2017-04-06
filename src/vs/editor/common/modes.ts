@@ -163,7 +163,7 @@ export interface Hover {
 
 /**
  * The hover provider interface defines the contract between extensions and
- * the [hover](https://code.visualstudio.com/docs/editor/editingevolved#_hover)-feature.
+ * the [hover](https://code.visualstudio.com/docs/editor/intellisense)-feature.
  */
 export interface HoverProvider {
 	/**
@@ -183,12 +183,15 @@ export type SuggestionType = 'method'
 	| 'field'
 	| 'variable'
 	| 'class'
+	| 'struct'
 	| 'interface'
 	| 'module'
 	| 'property'
 	| 'unit'
 	| 'value'
+	| 'constant'
 	| 'enum'
+	| 'enum-member'
 	| 'keyword'
 	| 'snippet'
 	| 'text'
@@ -238,9 +241,9 @@ export interface ISuggestSupport {
 
 	triggerCharacters?: string[];
 
-	provideCompletionItems(model: editorCommon.IReadOnlyModel, position: Position, token: CancellationToken): ISuggestResult | Thenable<ISuggestResult>;
+	provideCompletionItems(model: editorCommon.IModel, position: Position, token: CancellationToken): ISuggestResult | Thenable<ISuggestResult>;
 
-	resolveCompletionItem?(model: editorCommon.IReadOnlyModel, position: Position, item: ISuggestion, token: CancellationToken): ISuggestion | Thenable<ISuggestion>;
+	resolveCompletionItem?(model: editorCommon.IModel, position: Position, item: ISuggestion, token: CancellationToken): ISuggestion | Thenable<ISuggestion>;
 }
 
 /**
@@ -320,7 +323,7 @@ export interface SignatureHelp {
 }
 /**
  * The signature help provider interface defines the contract between extensions and
- * the [parameter hints](https://code.visualstudio.com/docs/editor/editingevolved#_parameter-hints)-feature.
+ * the [parameter hints](https://code.visualstudio.com/docs/editor/intellisense)-feature.
  */
 export interface SignatureHelpProvider {
 
@@ -476,107 +479,48 @@ export enum SymbolKind {
 	Array = 17,
 	Object = 18,
 	Key = 19,
-	Null = 20
+	Null = 20,
+	EnumMember = 21,
+	Struct = 22
 }
+
+
 /**
  * @internal
  */
-export namespace SymbolKind {
+export const symbolKindToCssClass = (function () {
 
-	/**
-	 * @internal
-	 */
-	export function from(kind: number | SymbolKind): string {
-		switch (kind) {
-			case SymbolKind.Method:
-				return 'method';
-			case SymbolKind.Function:
-				return 'function';
-			case SymbolKind.Constructor:
-				return 'constructor';
-			case SymbolKind.Variable:
-				return 'variable';
-			case SymbolKind.Class:
-				return 'class';
-			case SymbolKind.Interface:
-				return 'interface';
-			case SymbolKind.Namespace:
-				return 'namespace';
-			case SymbolKind.Package:
-				return 'package';
-			case SymbolKind.Module:
-				return 'module';
-			case SymbolKind.Property:
-				return 'property';
-			case SymbolKind.Enum:
-				return 'enum';
-			case SymbolKind.String:
-				return 'string';
-			case SymbolKind.File:
-				return 'file';
-			case SymbolKind.Array:
-				return 'array';
-			case SymbolKind.Number:
-				return 'number';
-			case SymbolKind.Boolean:
-				return 'boolean';
-			case SymbolKind.Object:
-				return 'object';
-			case SymbolKind.Key:
-				return 'key';
-			case SymbolKind.Null:
-				return 'null';
-		}
-		return 'property';
-	}
+	const _fromMapping: { [n: number]: string } = Object.create(null);
+	_fromMapping[SymbolKind.File] = 'file';
+	_fromMapping[SymbolKind.Module] = 'module';
+	_fromMapping[SymbolKind.Namespace] = 'namespace';
+	_fromMapping[SymbolKind.Package] = 'package';
+	_fromMapping[SymbolKind.Class] = 'class';
+	_fromMapping[SymbolKind.Method] = 'method';
+	_fromMapping[SymbolKind.Property] = 'property';
+	_fromMapping[SymbolKind.Field] = 'field';
+	_fromMapping[SymbolKind.Constructor] = 'constructor';
+	_fromMapping[SymbolKind.Enum] = 'enum';
+	_fromMapping[SymbolKind.Interface] = 'interface';
+	_fromMapping[SymbolKind.Function] = 'function';
+	_fromMapping[SymbolKind.Variable] = 'variable';
+	_fromMapping[SymbolKind.Constant] = 'constant';
+	_fromMapping[SymbolKind.String] = 'string';
+	_fromMapping[SymbolKind.Number] = 'number';
+	_fromMapping[SymbolKind.Boolean] = 'boolean';
+	_fromMapping[SymbolKind.Array] = 'array';
+	_fromMapping[SymbolKind.Object] = 'object';
+	_fromMapping[SymbolKind.Key] = 'key';
+	_fromMapping[SymbolKind.Null] = 'null';
+	_fromMapping[SymbolKind.EnumMember] = 'enum-member';
+	_fromMapping[SymbolKind.Struct] = 'struct';
 
-	/**
-	 * @internal
-	 */
-	export function to(type: string): SymbolKind {
-		switch (type) {
-			case 'method':
-				return SymbolKind.Method;
-			case 'function':
-				return SymbolKind.Function;
-			case 'constructor':
-				return SymbolKind.Constructor;
-			case 'variable':
-				return SymbolKind.Variable;
-			case 'class':
-				return SymbolKind.Class;
-			case 'interface':
-				return SymbolKind.Interface;
-			case 'namespace':
-				return SymbolKind.Namespace;
-			case 'package':
-				return SymbolKind.Package;
-			case 'module':
-				return SymbolKind.Module;
-			case 'property':
-				return SymbolKind.Property;
-			case 'enum':
-				return SymbolKind.Enum;
-			case 'string':
-				return SymbolKind.String;
-			case 'file':
-				return SymbolKind.File;
-			case 'array':
-				return SymbolKind.Array;
-			case 'number':
-				return SymbolKind.Number;
-			case 'boolean':
-				return SymbolKind.Boolean;
-			case 'object':
-				return SymbolKind.Object;
-			case 'key':
-				return SymbolKind.Key;
-			case 'null':
-				return SymbolKind.Null;
-		}
-		return SymbolKind.Property;
-	}
-}
+	return function toCssClassName(kind: SymbolKind): string {
+		return _fromMapping[kind] || 'property';
+	};
+})();
+
+
 /**
  * Represents information about programming constructs like variables, classes,
  * interfaces etc.
@@ -610,6 +554,12 @@ export interface DocumentSymbolProvider {
 	provideDocumentSymbols(model: editorCommon.IReadOnlyModel, token: CancellationToken): SymbolInformation[] | Thenable<SymbolInformation[]>;
 }
 
+export interface TextEdit {
+	range: editorCommon.IRange;
+	text: string;
+	eol?: editorCommon.EndOfLineSequence;
+}
+
 /**
  * Interface used to format a model
  */
@@ -631,7 +581,7 @@ export interface DocumentFormattingEditProvider {
 	/**
 	 * Provide formatting edits for a whole document.
 	 */
-	provideDocumentFormattingEdits(model: editorCommon.IReadOnlyModel, options: FormattingOptions, token: CancellationToken): editorCommon.ISingleEditOperation[] | Thenable<editorCommon.ISingleEditOperation[]>;
+	provideDocumentFormattingEdits(model: editorCommon.IReadOnlyModel, options: FormattingOptions, token: CancellationToken): TextEdit[] | Thenable<TextEdit[]>;
 }
 /**
  * The document formatting provider interface defines the contract between extensions and
@@ -645,7 +595,7 @@ export interface DocumentRangeFormattingEditProvider {
 	 * or larger range. Often this is done by adjusting the start and end
 	 * of the range to full syntax nodes.
 	 */
-	provideDocumentRangeFormattingEdits(model: editorCommon.IReadOnlyModel, range: Range, options: FormattingOptions, token: CancellationToken): editorCommon.ISingleEditOperation[] | Thenable<editorCommon.ISingleEditOperation[]>;
+	provideDocumentRangeFormattingEdits(model: editorCommon.IReadOnlyModel, range: Range, options: FormattingOptions, token: CancellationToken): TextEdit[] | Thenable<TextEdit[]>;
 }
 /**
  * The document formatting provider interface defines the contract between extensions and
@@ -660,7 +610,7 @@ export interface OnTypeFormattingEditProvider {
 	 * what range the position to expand to, like find the matching `{`
 	 * when `}` has been entered.
 	 */
-	provideOnTypeFormattingEdits(model: editorCommon.IReadOnlyModel, position: Position, ch: string, options: FormattingOptions, token: CancellationToken): editorCommon.ISingleEditOperation[] | Thenable<editorCommon.ISingleEditOperation[]>;
+	provideOnTypeFormattingEdits(model: editorCommon.IReadOnlyModel, position: Position, ch: string, options: FormattingOptions, token: CancellationToken): TextEdit[] | Thenable<TextEdit[]>;
 }
 
 /**
@@ -704,6 +654,7 @@ export interface RenameProvider {
 export interface Command {
 	id: string;
 	title: string;
+	tooltip?: string;
 	arguments?: any[];
 }
 export interface ICodeLensSymbol {

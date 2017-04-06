@@ -8,8 +8,11 @@
 import 'vs/css!./glyphMargin';
 import { DynamicViewOverlay } from 'vs/editor/browser/view/dynamicViewOverlay';
 import { ViewContext } from 'vs/editor/common/view/viewContext';
-import { IRenderingContext } from 'vs/editor/common/view/renderingContext';
+import { RenderingContext } from 'vs/editor/common/view/renderingContext';
 import * as viewEvents from 'vs/editor/common/view/viewEvents';
+
+import { editorBackground } from 'vs/platform/theme/common/colorRegistry';
+import { registerThemingParticipant } from 'vs/platform/theme/common/themeService';
 
 export class DecorationToRender {
 	_decorationToRenderBrand: void;
@@ -127,7 +130,7 @@ export class GlyphMarginOverlay extends DedupOverlay {
 	public onFlushed(e: viewEvents.ViewFlushedEvent): boolean {
 		return true;
 	}
-	public onLineChanged(e: viewEvents.ViewLineChangedEvent): boolean {
+	public onLinesChanged(e: viewEvents.ViewLinesChangedEvent): boolean {
 		return true;
 	}
 	public onLinesDeleted(e: viewEvents.ViewLinesDeletedEvent): boolean {
@@ -148,7 +151,7 @@ export class GlyphMarginOverlay extends DedupOverlay {
 
 	// --- end event handlers
 
-	protected _getDecorations(ctx: IRenderingContext): DecorationToRender[] {
+	protected _getDecorations(ctx: RenderingContext): DecorationToRender[] {
 		let decorations = ctx.getDecorationsInViewport();
 		let r: DecorationToRender[] = [];
 		for (let i = 0, len = decorations.length; i < len; i++) {
@@ -161,7 +164,7 @@ export class GlyphMarginOverlay extends DedupOverlay {
 		return r;
 	}
 
-	public prepareRender(ctx: IRenderingContext): void {
+	public prepareRender(ctx: RenderingContext): void {
 		if (!this._glyphMargin) {
 			this._renderResult = null;
 			return;
@@ -206,3 +209,10 @@ export class GlyphMarginOverlay extends DedupOverlay {
 		return this._renderResult[lineIndex];
 	}
 }
+
+registerThemingParticipant((theme, collector) => {
+	let editorBackgroundColor = theme.getColor(editorBackground);
+	if (editorBackgroundColor) {
+		collector.addRule(`.monaco-editor.${theme.selector} .glyph-margin { background-color: ${editorBackgroundColor}; }`);
+	}
+});

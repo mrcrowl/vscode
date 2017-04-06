@@ -30,7 +30,7 @@ import { Scope } from 'vs/workbench/common/memento';
 import { IPreferencesService } from 'vs/workbench/parts/preferences/common/preferences';
 import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
 import { getOutOfWorkspaceEditorResources } from 'vs/workbench/common/editor';
-import { FileChangeType, FileChangesEvent, IFileService } from 'vs/platform/files/common/files';
+import { FileChangeType, FileChangesEvent, IFileService, isEqual } from 'vs/platform/files/common/files';
 import { Viewlet } from 'vs/workbench/browser/viewlet';
 import { Match, FileMatch, SearchModel, FileMatchOrMatch, IChangeEvent, ISearchWorkbenchService } from 'vs/workbench/parts/search/common/searchModel';
 import { QueryBuilder } from 'vs/workbench/parts/search/common/searchQuery';
@@ -48,7 +48,7 @@ import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
 import { IContextKeyService, IContextKey } from 'vs/platform/contextkey/common/contextkey';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { KeyCode } from 'vs/base/common/keyCodes';
-import { PatternInputWidget } from 'vs/workbench/parts/search/browser/patternInputWidget';
+import { PatternInputWidget, ExcludePatternInputWidget } from 'vs/workbench/parts/search/browser/patternInputWidget';
 import { SearchRenderer, SearchDataSource, SearchSorter, SearchController, SearchAccessibilityProvider, SearchFilter } from 'vs/workbench/parts/search/browser/searchResultsView';
 import { SearchWidget } from 'vs/workbench/parts/search/browser/searchWidget';
 import { RefreshAction, CollapseAllAction, ClearSearchResultsAction, ConfigureGlobalExclusionsAction } from 'vs/workbench/parts/search/browser/searchActions';
@@ -58,6 +58,8 @@ import { IUntitledEditorService } from 'vs/workbench/services/untitled/common/un
 import { OpenFolderAction, OpenFileFolderAction } from 'vs/workbench/browser/actions/fileActions';
 import * as Constants from 'vs/workbench/parts/search/common/constants';
 import { IListService } from 'vs/platform/list/browser/listService';
+import { IThemeService, ITheme, ICssStyleCollector, registerThemingParticipant } from 'vs/platform/theme/common/themeService';
+import { editorFindMatchHighlight } from 'vs/platform/theme/common/colorRegistry';
 
 export class SearchViewlet extends Viewlet {
 
@@ -83,7 +85,7 @@ export class SearchViewlet extends Viewlet {
 	private searchWidget: SearchWidget;
 	private size: Dimension;
 	private queryDetails: HTMLElement;
-	private inputPatternExclusions: PatternInputWidget;
+	private inputPatternExclusions: ExcludePatternInputWidget;
 	private inputPatternGlobalExclusions: InputBox;
 	private inputPatternGlobalExclusionsContainer: Builder;
 	private inputPatternIncludes: PatternInputWidget;
@@ -112,9 +114,10 @@ export class SearchViewlet extends Viewlet {
 		@IReplaceService private replaceService: IReplaceService,
 		@IUntitledEditorService private untitledEditorService: IUntitledEditorService,
 		@IPreferencesService private preferencesService: IPreferencesService,
-		@IListService private listService: IListService
+		@IListService private listService: IListService,
+		@IThemeService protected themeService: IThemeService
 	) {
-		super(Constants.VIEWLET_ID, telemetryService);
+		super(Constants.VIEWLET_ID, telemetryService, themeService);
 
 		this.toDispose = [];
 		this.viewletVisible = Constants.SearchViewletVisibleKey.bindTo(contextKeyService);
@@ -155,23 +158,29 @@ export class SearchViewlet extends Viewlet {
 		});
 		this.createSearchWidget(this.searchWidgetsContainer);
 
-		let filePatterns = this.viewletSettings['query.filePatterns'] || '';
-		let patternExclusions = this.viewletSettings['query.folderExclusions'] || '';
-		let exclusionsUsePattern = this.viewletSettings['query.exclusionsUsePattern'];
-		let includesUsePattern = this.viewletSettings['query.includesUsePattern'];
-		let patternIncludes = this.viewletSettings['query.folderIncludes'] || '';
+		const filePatterns = this.viewletSettings['query.filePatterns'] || '';
+		const patternExclusions = this.viewletSettings['query.folderExclusions'] || '';
+		const exclusionsUsePattern = this.viewletSettings['query.exclusionsUsePattern'];
+		const includesUsePattern = this.viewletSettings['query.includesUsePattern'];
+		const patternIncludes = this.viewletSettings['query.folderIncludes'] || '';
+		const useIgnoreFiles = typeof this.viewletSettings['query.useIgnoreFiles'] === 'boolean' ?
+			this.viewletSettings['query.useIgnoreFiles'] :
+			this.configurationService.getConfiguration<ISearchConfiguration>().search.useIgnoreFilesByDefault;
+		const useExcludeSettings = typeof this.viewletSettings['query.useExcludeSettings'] === 'boolean' ?
+			this.viewletSettings['query.useExcludeSettings'] :
+			true;
 
 		this.queryDetails = this.searchWidgetsContainer.div({ 'class': ['query-details'] }, (builder) => {
 			builder.div({ 'class': 'more', 'tabindex': 0, 'role': 'button', 'title': nls.localize('moreSearch', "Toggle Search Details") })
 				.on(dom.EventType.CLICK, (e) => {
 					dom.EventHelper.stop(e);
-					this.toggleFileTypes(true);
+					this.toggleQueryDetails(true);
 				}).on(dom.EventType.KEY_UP, (e: KeyboardEvent) => {
 					let event = new StandardKeyboardEvent(e);
 
 					if (event.equals(KeyCode.Enter) || event.equals(KeyCode.Space)) {
 						dom.EventHelper.stop(e);
-						this.toggleFileTypes();
+						this.toggleQueryDetails();
 					}
 				});
 
@@ -180,7 +189,7 @@ export class SearchViewlet extends Viewlet {
 				let title = nls.localize('searchScope.includes', "files to include");
 				builder.element('h4', { text: title });
 
-				this.inputPatternIncludes = new PatternInputWidget(builder.getContainer(), this.contextViewService, {
+				this.inputPatternIncludes = new PatternInputWidget(builder.getContainer(), this.contextViewService, this.themeService, {
 					ariaLabel: nls.localize('label.includes', 'Search Include Patterns')
 				});
 
@@ -201,12 +210,14 @@ export class SearchViewlet extends Viewlet {
 				let title = nls.localize('searchScope.excludes', "files to exclude");
 				builder.element('h4', { text: title });
 
-				this.inputPatternExclusions = new PatternInputWidget(builder.getContainer(), this.contextViewService, {
+				this.inputPatternExclusions = new ExcludePatternInputWidget(builder.getContainer(), this.contextViewService, this.themeService, this.telemetryService, {
 					ariaLabel: nls.localize('label.excludes', 'Search Exclude Patterns')
 				});
 
 				this.inputPatternExclusions.setIsGlobPattern(exclusionsUsePattern);
 				this.inputPatternExclusions.setValue(patternExclusions);
+				this.inputPatternExclusions.setUseIgnoreFiles(useIgnoreFiles);
+				this.inputPatternExclusions.setUseExcludeSettings(useExcludeSettings);
 
 				this.inputPatternExclusions
 					.on(FindInput.OPTION_CHANGE, (e) => {
@@ -246,7 +257,7 @@ export class SearchViewlet extends Viewlet {
 		});
 
 		if (filePatterns !== '' || patternExclusions !== '' || patternIncludes !== '') {
-			this.toggleFileTypes(true, true, true);
+			this.toggleQueryDetails(true, true, true);
 		}
 
 		this.updateGlobalPatternExclusions(this.configurationService.getConfiguration<ISearchConfiguration>());
@@ -266,7 +277,7 @@ export class SearchViewlet extends Viewlet {
 		let isWholeWords = this.viewletSettings['query.wholeWords'] === true;
 		let isCaseSensitive = this.viewletSettings['query.caseSensitive'] === true;
 
-		this.searchWidget = new SearchWidget(builder, this.contextViewService, {
+		this.searchWidget = new SearchWidget(builder, this.contextViewService, this.themeService, {
 			value: contentPattern,
 			isRegex: isRegex,
 			isCaseSensitive: isCaseSensitive,
@@ -323,18 +334,8 @@ export class SearchViewlet extends Viewlet {
 	}
 
 	private refreshTree(event?: IChangeEvent): TPromise<any> {
-		if (!event) {
+		if (!event || event.added || event.removed) {
 			return this.tree.refresh(this.viewModel.searchResult);
-		}
-
-		if (event.added || event.removed) {
-			return this.tree.refresh(this.viewModel.searchResult).then(() => {
-				if (event.added) {
-					event.elements.forEach(element => {
-						this.autoExpandFileMatch(element, true);
-					});
-				}
-			});
 		} else {
 			if (event.elements.length === 1) {
 				return this.tree.refresh(event.elements[0]);
@@ -474,13 +475,13 @@ export class SearchViewlet extends Viewlet {
 			let focusToSelectionDelayHandle: number;
 			let lastFocusToSelection: number;
 
-			const focusToSelection = () => {
+			const focusToSelection = (originalEvent: KeyboardEvent | MouseEvent) => {
 				lastFocusToSelection = Date.now();
 
 				const focus = this.tree.getFocus();
 				let payload: any;
 				if (focus instanceof Match) {
-					payload = { origin: 'keyboard', originalEvent: event };
+					payload = { origin: 'keyboard', originalEvent, preserveFocus: true };
 				}
 
 				this.tree.setSelection([focus], payload);
@@ -490,13 +491,15 @@ export class SearchViewlet extends Viewlet {
 			this.toUnbind.push(this.tree.addListener2('focus', (event: any) => {
 				let keyboard = event.payload && event.payload.origin === 'keyboard';
 				if (keyboard) {
+					let originalEvent: KeyboardEvent | MouseEvent = event.payload && event.payload.originalEvent;
+
 					// debounce setting selection so that we are not too quickly opening
 					// when the user is pressing and holding the key to move focus
 					if (focusToSelectionDelayHandle || (Date.now() - lastFocusToSelection <= 75)) {
 						window.clearTimeout(focusToSelectionDelayHandle);
-						focusToSelectionDelayHandle = window.setTimeout(() => focusToSelection(), 300);
+						focusToSelectionDelayHandle = window.setTimeout(() => focusToSelection(originalEvent), 300);
 					} else {
-						focusToSelection();
+						focusToSelection(originalEvent);
 					}
 				}
 			}));
@@ -518,7 +521,7 @@ export class SearchViewlet extends Viewlet {
 				}
 
 				let sideBySide = (originalEvent && (originalEvent.ctrlKey || originalEvent.metaKey));
-				let focusEditor = (keyboard && originalEvent && (<KeyboardEvent>originalEvent).keyCode === KeyCode.Enter) || doubleClick || (event.payload && event.payload.focusEditor);
+				let focusEditor = (keyboard && (!event.payload || !event.payload.preserveFocus)) || doubleClick;
 
 				if (element instanceof Match) {
 					let selectedMatch: Match = element;
@@ -666,7 +669,7 @@ export class SearchViewlet extends Viewlet {
 		if (visible && !this.editorService.getActiveEditor()) {
 			let focus = this.tree.getFocus();
 			if (focus) {
-				this.onFocus(focus);
+				this.onFocus(focus, true);
 			}
 		}
 
@@ -712,7 +715,7 @@ export class SearchViewlet extends Viewlet {
 
 	private moveFocusFromSearchOrReplace() {
 		if (this.showsFileTypes()) {
-			this.toggleFileTypes(true, this.showsFileTypes());
+			this.toggleQueryDetails(true, this.showsFileTypes());
 		} else {
 			this.selectTreeIfNotSelected();
 		}
@@ -742,7 +745,7 @@ export class SearchViewlet extends Viewlet {
 
 	public moveFocusFromResults(): void {
 		if (this.showsFileTypes()) {
-			this.toggleFileTypes(true, true, false, true);
+			this.toggleQueryDetails(true, true, false, true);
 		} else {
 			this.searchWidget.focus(true, true);
 		}
@@ -759,8 +762,9 @@ export class SearchViewlet extends Viewlet {
 		this.inputPatternIncludes.setWidth(this.size.width - 28 /* container margin */);
 		this.inputPatternGlobalExclusions.width = this.size.width - 28 /* container margin */ - 24 /* actions */;
 
-		let searchResultContainerSize = this.size.height -
-			dom.getTotalHeight(this.messages.getHTMLElement()) -
+		const messagesSize = this.messages.isHidden() ? 0 : dom.getTotalHeight(this.messages.getHTMLElement());
+		const searchResultContainerSize = this.size.height -
+			messagesSize -
 			dom.getTotalHeight(this.searchWidgetsContainer.getContainer());
 
 		this.results.style({ height: searchResultContainerSize + 'px' });
@@ -844,7 +848,9 @@ export class SearchViewlet extends Viewlet {
 		this.onQueryChanged(true, true);
 	}
 
-	public toggleFileTypes(moveFocus?: boolean, show?: boolean, skipLayout?: boolean, reverse?: boolean): void {
+	public toggleQueryDetails(moveFocus?: boolean, show?: boolean, skipLayout?: boolean, reverse?: boolean): void {
+		this.telemetryService.publicLog('search.toggleQueryDetails');
+
 		let cls = 'more';
 		show = typeof show === 'undefined' ? !dom.hasClass(this.queryDetails, cls) : Boolean(show);
 		skipLayout = Boolean(skipLayout);
@@ -878,14 +884,14 @@ export class SearchViewlet extends Viewlet {
 			return;
 		}
 
-		if (workspace.resource.toString() === resource.toString()) {
+		if (isEqual(workspace.resource.fsPath, resource.fsPath)) {
 			this.inputPatternIncludes.setValue('');
 			this.searchWidget.focus();
 			return;
 		}
 
 		if (!this.showsFileTypes()) {
-			this.toggleFileTypes(true, true);
+			this.toggleQueryDetails(true, true);
 		}
 		const workspaceRelativePath = this.contextService.toWorkspaceRelativePath(resource);
 		if (workspaceRelativePath) {
@@ -896,14 +902,16 @@ export class SearchViewlet extends Viewlet {
 	}
 
 	public onQueryChanged(rerunQuery: boolean, preserveFocus?: boolean): void {
-		let isRegex = this.searchWidget.searchInput.getRegex();
-		let isWholeWords = this.searchWidget.searchInput.getWholeWords();
-		let isCaseSensitive = this.searchWidget.searchInput.getCaseSensitive();
-		let contentPattern = this.searchWidget.searchInput.getValue();
-		let patternExcludes = this.inputPatternExclusions.getValue().trim();
-		let exclusionsUsePattern = this.inputPatternExclusions.isGlobPattern();
-		let patternIncludes = this.inputPatternIncludes.getValue().trim();
-		let includesUsePattern = this.inputPatternIncludes.isGlobPattern();
+		const isRegex = this.searchWidget.searchInput.getRegex();
+		const isWholeWords = this.searchWidget.searchInput.getWholeWords();
+		const isCaseSensitive = this.searchWidget.searchInput.getCaseSensitive();
+		const contentPattern = this.searchWidget.searchInput.getValue();
+		const patternExcludes = this.inputPatternExclusions.getValue().trim();
+		const exclusionsUsePattern = this.inputPatternExclusions.isGlobPattern();
+		const patternIncludes = this.inputPatternIncludes.getValue().trim();
+		const includesUsePattern = this.inputPatternIncludes.isGlobPattern();
+		const useIgnoreFiles = this.inputPatternExclusions.useIgnoreFiles();
+		const useExcludeSettings = this.inputPatternExclusions.useExcludeSettings();
 
 		// store memento
 		this.viewletSettings['query.contentPattern'] = contentPattern;
@@ -914,6 +922,8 @@ export class SearchViewlet extends Viewlet {
 		this.viewletSettings['query.exclusionsUsePattern'] = exclusionsUsePattern;
 		this.viewletSettings['query.folderIncludes'] = patternIncludes;
 		this.viewletSettings['query.includesUsePattern'] = includesUsePattern;
+		this.viewletSettings['query.useIgnoreFiles'] = useIgnoreFiles;
+		this.viewletSettings['query.useExcludeSettings'] = useExcludeSettings;
 
 		if (!rerunQuery) {
 			return;
@@ -937,22 +947,24 @@ export class SearchViewlet extends Viewlet {
 			}
 		}
 
-		let content = {
+		const content = {
 			pattern: contentPattern,
 			isRegExp: isRegex,
 			isCaseSensitive: isCaseSensitive,
 			isWordMatch: isWholeWords
 		};
 
-		let excludes: IExpression = this.inputPatternExclusions.getGlob();
-		let includes: IExpression = this.inputPatternIncludes.getGlob();
+		const excludes: IExpression = this.inputPatternExclusions.getGlob();
+		const includes: IExpression = this.inputPatternIncludes.getGlob();
 
-		let options: IQueryOptions = {
+		const options: IQueryOptions = {
 			folderResources: this.contextService.hasWorkspace() ? [this.contextService.getWorkspace().resource] : [],
 			extraFileResources: getOutOfWorkspaceEditorResources(this.editorGroupService, this.contextService),
 			excludePattern: excludes,
 			maxResults: SearchViewlet.MAX_TEXT_RESULTS,
-			includePattern: includes
+			includePattern: includes,
+			disregardIgnoreFiles: !useIgnoreFiles,
+			disregardExcludeSettings: !useExcludeSettings
 		};
 
 		this.onQueryTriggered(this.queryBuilder.text(content, options), patternExcludes, patternIncludes);
@@ -962,55 +974,45 @@ export class SearchViewlet extends Viewlet {
 		}
 	}
 
-	private autoExpandFileMatch(fileMatch: FileMatch, alwaysExpandIfOneResult: boolean): void {
-		let length = fileMatch.matches().length;
-		if (length < 10 || (alwaysExpandIfOneResult && this.viewModel.searchResult.count() === 1 && length < 50)) {
-			this.tree.expand(fileMatch).done(null, errors.onUnexpectedError);
-		} else {
-			this.tree.collapse(fileMatch).done(null, errors.onUnexpectedError);
-		}
-	}
-
 	private onQueryTriggered(query: ISearchQuery, excludePattern: string, includePattern: string): void {
 		this.viewModel.cancelSearch();
 
 		// Progress total is 100.0% for more progress bar granularity
 		let progressTotal = 1000;
-		let progressRunner = this.progressService.show(progressTotal);
 		let progressWorked = 0;
+
+		let progressRunner = query.useRipgrep ?
+			this.progressService.show(/*infinite=*/true) :
+			this.progressService.show(progressTotal);
 
 		this.loading = true;
 		this.searchWidget.searchInput.clearMessage();
 		this.showEmptyStage();
-
-		let handledMatches: { [id: string]: boolean } = Object.create(null);
-		let autoExpand = (alwaysExpandIfOneResult: boolean) => {
-			// Auto-expand / collapse based on number of matches:
-			// - alwaysExpandIfOneResult: expand file results if we have just one file result and less than 50 matches on a file
-			// - expand file results if we have more than one file result and less than 10 matches on a file
-			let matches = this.viewModel.searchResult.matches();
-			matches.forEach((match) => {
-				if (handledMatches[match.id()]) {
-					return; // if we once handled a result, do not do it again to keep results stable (the user might have expanded/collapsed meanwhile)
-				}
-				handledMatches[match.id()] = true;
-				this.autoExpandFileMatch(match, alwaysExpandIfOneResult);
-			});
-		};
 
 		let isDone = false;
 		let onComplete = (completed?: ISearchComplete) => {
 			isDone = true;
 
 			// Complete up to 100% as needed
-			if (completed) {
+			if (completed && !query.useRipgrep) {
 				progressRunner.worked(progressTotal - progressWorked);
 				setTimeout(() => progressRunner.done(), 200);
 			} else {
 				progressRunner.done();
 			}
 
-			this.onSearchResultsChanged().then(() => autoExpand(true));
+			// Do final render, then expand if just 1 file with less than 50 matches
+			this.onSearchResultsChanged().then(() => {
+				if (this.viewModel.searchResult.count() === 1) {
+					const onlyMatch = this.viewModel.searchResult.matches()[0];
+					if (onlyMatch.count() < 50) {
+						return this.tree.expand(onlyMatch);
+					}
+				}
+
+				return null;
+			}).done(null, errors.onUnexpectedError);
+
 			this.viewModel.replaceString = this.searchWidget.getReplaceValue();
 
 			let hasResults = !this.viewModel.searchResult.isEmpty();
@@ -1132,35 +1134,35 @@ export class SearchViewlet extends Viewlet {
 				return;
 			}
 
-			// Progress bar update
-			let fakeProgress = true;
-			if (total > 0 && worked > 0) {
-				let ratio = Math.round((worked / total) * progressTotal);
-				if (ratio > progressWorked) { // never show less progress than what we have already
-					progressRunner.worked(ratio - progressWorked);
-					progressWorked = ratio;
-					fakeProgress = false;
+			if (!query.useRipgrep) {
+				// Progress bar update
+				let fakeProgress = true;
+				if (total > 0 && worked > 0) {
+					let ratio = Math.round((worked / total) * progressTotal);
+					if (ratio > progressWorked) { // never show less progress than what we have already
+						progressRunner.worked(ratio - progressWorked);
+						progressWorked = ratio;
+						fakeProgress = false;
+					}
 				}
-			}
 
-			// Fake progress up to 90%, or when actual progress beats it
-			const fakeMax = 900;
-			const fakeMultiplier = 12;
-			if (fakeProgress && progressWorked < fakeMax) {
-				// Linearly decrease the rate of fake progress.
-				// 1 is the smallest allowed amount of progress.
-				const fakeAmt = Math.round((fakeMax - progressWorked) / fakeMax * fakeMultiplier) || 1;
-				progressWorked += fakeAmt;
-				progressRunner.worked(fakeAmt);
+				// Fake progress up to 90%, or when actual progress beats it
+				const fakeMax = 900;
+				const fakeMultiplier = 12;
+				if (fakeProgress && progressWorked < fakeMax) {
+					// Linearly decrease the rate of fake progress.
+					// 1 is the smallest allowed amount of progress.
+					const fakeAmt = Math.round((fakeMax - progressWorked) / fakeMax * fakeMultiplier) || 1;
+					progressWorked += fakeAmt;
+					progressRunner.worked(fakeAmt);
+				}
 			}
 
 			// Search result tree update
 			const fileCount = this.viewModel.searchResult.fileCount();
 			if (visibleMatches !== fileCount) {
 				visibleMatches = fileCount;
-				this.tree.refresh().then(() => {
-					autoExpand(false);
-				}).done(null, errors.onUnexpectedError);
+				this.tree.refresh().done(null, errors.onUnexpectedError);
 
 				this.updateSearchResultCount();
 			}
@@ -1174,7 +1176,7 @@ export class SearchViewlet extends Viewlet {
 
 		this.searchWidget.setReplaceAllActionState(false);
 		// this.replaceService.disposeAllReplacePreviews();
-		this.viewModel.search(query).done(onComplete, onError, onProgress);
+		this.viewModel.search(query).done(onComplete, onError, query.useRipgrep ? undefined : onProgress);
 	}
 
 	private updateSearchResultCount(): void {
@@ -1260,7 +1262,7 @@ export class SearchViewlet extends Viewlet {
 				preserveFocus,
 				pinned,
 				selection,
-				revealIfVisible: true
+				revealIfVisible: !sideBySide
 			}
 		}, sideBySide).then(editor => {
 			if (editor && element instanceof Match && preserveFocus) {
@@ -1354,3 +1356,11 @@ export class SearchViewlet extends Viewlet {
 		super.dispose();
 	}
 }
+
+registerThemingParticipant((theme: ITheme, collector: ICssStyleCollector) => {
+	let matchHighlightColor = theme.getColor(editorFindMatchHighlight);
+	if (matchHighlightColor) {
+		collector.addRule(`.search-viewlet .findInFileMatch { background-color: ${matchHighlightColor}; }`);
+		collector.addRule(`.search-viewlet .highlight { background-color: ${matchHighlightColor}; }`);
+	}
+});

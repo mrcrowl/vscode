@@ -150,7 +150,7 @@ export class ConfigurationResolverService implements IConfigurationResolverServi
 
 	private resolveConfigVariable(value: string, originalValue: string): string {
 		const replacer = (match: string, name: string) => {
-			let config = this.configurationService.getConfiguration();
+			let config = this.configurationService.getConfiguration<any>();
 			let newValue: any;
 			try {
 				const keys: string[] = name.split('.');
@@ -223,8 +223,7 @@ export class ConfigurationResolverService implements IConfigurationResolverServi
 				if (object[key] && typeof object[key] === 'object') {
 					findInteractiveVariables(object[key]);
 				} else if (typeof object[key] === 'string') {
-					object[key] = object[key].replace(new RegExp('command.', 'g'), 'command:');
-					const matches = /\${command:(.+)}/.exec(object[key]);
+					const matches = /\${command[:\.](.+)}/.exec(object[key]);
 					if (matches && matches.length === 2) {
 						const interactiveVariable = matches[1];
 						if (!interactiveVariablesToSubstitutes[interactiveVariable]) {
@@ -249,9 +248,13 @@ export class ConfigurationResolverService implements IConfigurationResolverServi
 
 				return this.commandService.executeCommand<string>(commandId, configuration).then(result => {
 					if (result) {
-						interactiveVariablesToSubstitutes[interactiveVariable].forEach(substitute =>
-							substitute.object[substitute.key] = substitute.object[substitute.key].replace(`\${command:${interactiveVariable}}`, result)
-						);
+						interactiveVariablesToSubstitutes[interactiveVariable].forEach(substitute => {
+							if (substitute.object[substitute.key].indexOf(`\${command:${interactiveVariable}}`) >= 0) {
+								substitute.object[substitute.key] = substitute.object[substitute.key].replace(`\${command:${interactiveVariable}}`, result);
+							} else if (substitute.object[substitute.key].indexOf(`\${command.${interactiveVariable}}`) >= 0) {
+								substitute.object[substitute.key] = substitute.object[substitute.key].replace(`\${command.${interactiveVariable}}`, result);
+							}
+						});
 					} else {
 						substitionCanceled = true;
 					}

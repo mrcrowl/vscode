@@ -41,6 +41,7 @@ import WorkspaceSymbolProvider from './features/workspaceSymbolProvider';
 import CodeActionProvider from './features/codeActionProvider';
 import ReferenceCodeLensProvider from './features/referencesCodeLensProvider';
 import JsDocCompletionHelper from './features/jsDocCompletionProvider';
+import ImplementationCodeLensProvider from './features/implementationsCodeLensProvider';
 
 import * as BuildStatus from './utils/buildStatus';
 import * as ProjectStatus from './utils/projectStatus';
@@ -107,8 +108,12 @@ export function activate(context: ExtensionContext): void {
 		client.onVersionStatusClicked();
 	}));
 
+	context.subscriptions.push(commands.registerCommand('typescript.openTsServerLog', () => {
+		client.openTsServerLogFile();
+	}));
+
 	context.subscriptions.push(
-		languages.registerCompletionItemProvider(selector, new JsDocCompletionHelper(client)));
+		languages.registerCompletionItemProvider(selector, new JsDocCompletionHelper(client), '*'));
 
 	const goToProjectConfig = (isTypeScript: boolean) => {
 		const editor = window.activeTextEditor;
@@ -145,6 +150,7 @@ class LanguageProvider {
 	private compileOnSaveSupport: CompileOnSaveSupport;
 	private typingsStatus: TypingsStatus;
 	private referenceCodeLensProvider: ReferenceCodeLensProvider;
+	private implementationCodeLensProvider: ImplementationCodeLensProvider;
 
 	private _validate: boolean = true;
 
@@ -230,6 +236,10 @@ class LanguageProvider {
 			this.referenceCodeLensProvider = new ReferenceCodeLensProvider(client);
 			this.referenceCodeLensProvider.updateConfiguration();
 			this.disposables.push(languages.registerCodeLensProvider(selector, this.referenceCodeLensProvider));
+
+			this.implementationCodeLensProvider = new ImplementationCodeLensProvider(client);
+			this.implementationCodeLensProvider.updateConfiguration();
+			this.disposables.push(languages.registerCodeLensProvider(selector, this.implementationCodeLensProvider));
 		}
 
 		if (client.apiVersion.has213Features()) {
@@ -309,6 +319,9 @@ class LanguageProvider {
 		}
 		if (this.referenceCodeLensProvider) {
 			this.referenceCodeLensProvider.updateConfiguration();
+		}
+		if (this.implementationCodeLensProvider) {
+			this.implementationCodeLensProvider.updateConfiguration();
 		}
 		if (this.formattingProvider) {
 			this.formattingProvider.updateConfiguration(config);
@@ -482,7 +495,8 @@ class TypeScriptServiceClientHost implements ITypescriptServiceClientHost {
 			const { configFileName } = res.body;
 			if (configFileName && configFileName.indexOf('/dev/null/') !== 0) {
 				return workspace.openTextDocument(configFileName)
-					.then(window.showTextDocument);
+					.then(doc =>
+						window.showTextDocument(doc, window.activeTextEditor ? window.activeTextEditor.viewColumn : undefined));
 			}
 
 			return window.showInformationMessage<ProjectConfigMessageItem>(
@@ -503,7 +517,8 @@ class TypeScriptServiceClientHost implements ITypescriptServiceClientHost {
 							const configFile = Uri.file(path.join(rootPath, isTypeScriptProject ? 'tsconfig.json' : 'jsconfig.json'));
 							return workspace.openTextDocument(configFile)
 								.then(undefined, _ => workspace.openTextDocument(configFile.with({ scheme: 'untitled' })))
-								.then(window.showTextDocument);
+								.then(doc =>
+									window.showTextDocument(doc, window.activeTextEditor ? window.activeTextEditor.viewColumn : undefined));
 
 						case ProjectConfigAction.LearnMore:
 							if (isTypeScriptProject) {
