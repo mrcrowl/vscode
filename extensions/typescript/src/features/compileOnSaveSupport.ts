@@ -5,11 +5,12 @@
 
 'use strict';
 
-import { TextDocument, Disposable, TextDocumentWillSaveEvent, window, workspace } from 'vscode';
+import { TextDocument, Disposable, TextDocumentWillSaveEvent, window, workspace, StatusBarItem, StatusBarAlignment } from 'vscode';
 
 // import * as fs from 'fs';
-import * as Proto from '../protocol';
+import * as protocol from '../protocol';
 import { ITypescriptServiceClient } from '../typescriptService';
+import * as path from "path";
 
 let nextBatchId: number = 0;
 
@@ -22,11 +23,12 @@ export default class TypeScriptCompileOnSaveSupport {
 	private client: ITypescriptServiceClient;
 	private watchedLanguageModeIds: Map<string, boolean>;
 	private disposables: Disposable[] = [];
-	private activeBatches: CompileOnSaveMultipleFileBatcher[];
+	private batches: CompileOnSaveMultipleFileBatcher[];
+	private get openBatches() { return this.batches.filter(b => b.open); }
 
 	constructor(client: ITypescriptServiceClient, languageModeIds: string[]) {
 		this.client = client;
-		this.activeBatches = [];
+		this.batches = [];
 		this.watchedLanguageModeIds = hash(languageModeIds);
 	}
 
@@ -56,16 +58,14 @@ export default class TypeScriptCompileOnSaveSupport {
 		}
 
 		let openBatch: CompileOnSaveMultipleFileBatcher | undefined;
-		for (const activeBatch of this.activeBatches) {
-			if (activeBatch.open && !activeBatch.expired) {
-				openBatch = activeBatch;
-				break;
-			}
+		for (const activeBatch of this.openBatches) {
+			openBatch = activeBatch;
+			break;
 		}
 
 		if (!openBatch) {
 			const newBatch = new CompileOnSaveMultipleFileBatcher(nextBatchId++);
-			this.activeBatches.push(newBatch);
+			this.batches.push(newBatch);
 			openBatch = newBatch;
 		}
 
@@ -86,62 +86,61 @@ export default class TypeScriptCompileOnSaveSupport {
 
 		const batch = this.getBatchForDocument(document);
 		if (batch) {
+			console.log(`${path.basename(document.fileName)}: Batch #${batch.id}`);
 			batch.notifyDocumentDidSave(document);
-			this.pruneBatchIfComplete(batch);
+			this.pruneBatchIfSavesComplete(batch);
+		}
+		else {
+			console.log(`${path.basename(document.fileName)}: NO Batch`);
 		}
 		// else { no batch... expired? }
 
-		const affectedFileArgs: Proto.CompileOnSaveEmitFileRequestArgs = {
+		const affectedFileArgs: protocol.CompileOnSaveEmitFileRequestArgs = {
 			file: document.fileName,
 			forced: false
 		};
 
 		const response = await this.client.execute('compileOnSaveAffectedFileList', affectedFileArgs);
-		const { body } = response;
-		if (body.length === 0 && batch) {
-			batch.dispose();
-			return;
-		}
-
-		const affectedFiles: AffectedFile[] = [];
-		for (const project of body) {
-			for (const filename of project.fileNames) {
-				affectedFiles.push({
-					key: hashAffectedFile(filename, project.projectFileName),
-					projectFileName: project.projectFileName,
-					filename: filename
-				});
-			}
-		}
+		const projects: protocol.CompileOnSaveAffectedFileListSingleProject[] = response.body;
+		const affectedFiles: AffectedFile[] = flattenProjectsFileList(projects);
 
 		if (batch) {
-			batch.provideAffectedFiles(affectedFiles);
+			batch.addAffectedFiles(affectedFiles);
+			batch.notifyAffectedFilesCalculated(document);
 		}
 
 		for (const file of affectedFiles) {
-			const emit: boolean = batch ? batch.shouldRequestEmitForAffectedFile(file) : true;
+			this.emitFile(file, batch);
+		}
+	}
 
-			if (emit) {
-				const emitArgs: Proto.CompileOnSaveEmitFileRequestArgs = { file: file.filename, projectFileName: file.projectFileName };
-				try {
-					await this.client.execute('compileOnSaveEmitFile', emitArgs);
-					if (batch) {
-						batch.notifyEmitComplete(file);
-					}
-				}
-				catch (e) {
-					console.error(`Emit failed: ${file.filename}`);
-					if (batch) {
-						batch.notifyEmitComplete(file);
-					}
-				}
+	private async emitFile(file: AffectedFile, batch: CompileOnSaveMultipleFileBatcher | undefined) {
+		if (batch && !batch.shouldRequestEmitForAffectedFile(file)) {
+			return;
+		}
+
+		const emitArgs: protocol.CompileOnSaveEmitFileRequestArgs = {
+			file: file.filename,
+			projectFileName: file.projectFileName
+		};
+
+		try {
+			await this.client.execute('compileOnSaveEmitFile', emitArgs);
+			if (batch) {
+				batch.notifyEmitComplete(file);
+			}
+		}
+		catch (e) {
+			console.error(`Emit failed: ${file.filename}`);
+			if (batch) {
+				batch.notifyEmitComplete(file);
 			}
 		}
 	}
 
-	private pruneBatchIfComplete(batch: CompileOnSaveMultipleFileBatcher) {
-		if (batch.savesComplete && this.activeBatches.indexOf(batch) >= 0) {
-			this.activeBatches = this.activeBatches.filter(b => b !== batch);
+	private pruneBatchIfSavesComplete(batch: CompileOnSaveMultipleFileBatcher) {
+		if (batch.savesComplete && this.batches.includes(batch)) {
+			this.batches = this.batches.filter(b => b !== batch);
 			// console.log(`Batch #${batch.id} complete: ${batch.elapsed}ms`);
 
 			this.pruneExpiredBatches();
@@ -149,19 +148,15 @@ export default class TypeScriptCompileOnSaveSupport {
 	}
 
 	private pruneExpiredBatches() {
-		if (this.activeBatches.length > 0) {
-			const [expiredBatches, activeBatches] = partition(this.activeBatches, batch => batch.expired);
-			this.activeBatches = activeBatches;
-
-			for (const expiredBatch of expiredBatches) {
-				expiredBatch.dispose();
-				// console.log(`Pruned batch #${expiredBatch.id}: Elapsed = ${expiredBatch.elapsed}ms`);
-			}
+		if (this.batches.length > 0) {
+			const [expiredBatches, activeBatches] = partition(this.batches, batch => batch.expired);
+			this.batches = activeBatches;
+			expiredBatches.forEach(batch => batch.notifyExpired());
 		}
 	}
 
 	private getBatchForDocument(document: TextDocument): CompileOnSaveMultipleFileBatcher | undefined {
-		for (const batch of this.activeBatches) {
+		for (const batch of this.openBatches) {
 			if (batch.containsPendingDocumentSave(document)) {
 				return batch;
 			}
@@ -234,38 +229,43 @@ export default class TypeScriptCompileOnSaveSupport {
 
 class CompileOnSaveMultipleFileBatcher {
 	public readonly id: number;
-	private compileStatusBarMessage: Disposable | null;
+	private compileStatusBarItem: StatusBarItem | null;
 
 	private creationTimestamp: number;
 	private firstDidSaveTimestamp: number;
-	private pendingSavedDocuments: Map<string, boolean>;
+	private pendingSavesEmitted: boolean;
+	private pendingSaves: Map<string, PendingFileStatus>;
+	private pendingSavesDescription: string;
 	private affectedFilesStatusMap: Map<string, AffectedFileStatus>;
 	private affectedFilesRemainingEmitCount: number;
 	private allPendingSavesCompleted: boolean;
+	private allAffectedFilesCalculated: boolean;
 	private receivedDidSavesNotifications: boolean;
 
-	/** Batch is open for more pending saves (i.e. hasn't received any didSave notifications yet) */
-	public get open(): boolean { return !this.receivedDidSavesNotifications && this.elapsed < BATCH_ISOLATION_TIME; }
+	/** Batch is open for more pending saves */
+	public get open(): boolean { return this.elapsed < BATCH_ISOLATION_TIME; }
 
 	/** All pending document saves for this batch have completed */
 	public get savesComplete(): boolean { return this.allPendingSavesCompleted; }
 
-	/** All emits have been completed */	
+	/** All emits have been completed */
 	public get emitComplete(): boolean { return this.affectedFilesRemainingEmitCount === 0; }
 
 	/** Elapsed time since this batch was created */
 	public get elapsed(): number { return Date.now() - this.creationTimestamp; }
 
-	/** Batch has passed expiry threshold */	
+	/** Batch has passed expiry threshold */
 	public get expired(): boolean { return this.elapsed > BATCH_EXPIRY_TIME; }
 
 	constructor(id: number) {
 		this.id = id;
 		this.creationTimestamp = Date.now();
-		this.pendingSavedDocuments = new Map();
+		this.pendingSaves = new Map();
 		this.affectedFilesStatusMap = new Map();
 		this.allPendingSavesCompleted = false;
+		this.allAffectedFilesCalculated = false;
 		this.receivedDidSavesNotifications = false;
+		this.affectedFilesRemainingEmitCount = 0;
 	}
 
 	public addPendingSave(document: TextDocument) {
@@ -273,92 +273,151 @@ class CompileOnSaveMultipleFileBatcher {
 			console.error('Can\'t add pending save to batch that has received didSave notifications.');
 		}
 		else {
-			this.pendingSavedDocuments.set(document.fileName, true);
+			this.pendingSaves.set(document.fileName, { didSave: false, affectedFilesCalculated: false });
 		}
 	}
 
 	public containsPendingDocumentSave(document: TextDocument): boolean {
-		return this.pendingSavedDocuments.has(document.fileName);
+		return this.pendingSaves.has(document.fileName);
 	}
 
 	private updateStatusBarMessage(message: string, duration?: number) {
-		if (this.compileStatusBarMessage) {
-			this.compileStatusBarMessage.dispose();
+		if (!this.compileStatusBarItem) {
+			this.compileStatusBarItem = window.createStatusBarItem(StatusBarAlignment.Left);
 		}
+
 		if (duration) {
-			this.compileStatusBarMessage = window.setStatusBarMessage(message, duration);
+			this.compileStatusBarItem.text = message;
+			setTimeout(() => this.dismissStatusBarMessage(), duration);
+			this.compileStatusBarItem.show();
 		}
 		else {
-			this.compileStatusBarMessage = window.setStatusBarMessage(message);
+			this.compileStatusBarItem.text = message;
+			this.compileStatusBarItem.show();
 		}
 	}
 
-	public notifyDocumentDidSave(document: TextDocument): { isFirstSave: boolean } {
-		let first: boolean = false;
+	private dismissStatusBarMessage() {
+		if (this.compileStatusBarItem) {
+			this.compileStatusBarItem.dispose();
+			this.compileStatusBarItem = null;
+		}
+	}
+
+	private haveAllPendingsBeenSaved(): boolean {
+		return Array.from(this.pendingSaves.values()).every(save => save.didSave);
+	}
+
+	private haveAllPendingsHadFilesCalculated(): boolean {
+		return Array.from(this.pendingSaves.values()).every(save => save.affectedFilesCalculated);
+	}
+
+	public notifyDocumentDidSave(document: TextDocument) {
+		const pendingSave = this.pendingSaves.get(document.fileName);
+		if (!pendingSave) {
+			return;
+		}
+
 		this.receivedDidSavesNotifications = true; // once we've received a "did-save" no more pending saves can be added
 		if (!this.firstDidSaveTimestamp) {
 			this.firstDidSaveTimestamp = Date.now();
 			this.updateStatusBarMessage(`$(zap) Compiling ts`);
-			first = true;
 		}
 
-		this.pendingSavedDocuments.delete(document.fileName);
-		if (this.pendingSavedDocuments.size === 0) {
+		pendingSave.didSave = true;
+
+		if (this.haveAllPendingsBeenSaved()) {
 			this.allPendingSavesCompleted = true;
 		}
-
-		return { isFirstSave: first };
 	}
 
-	public provideAffectedFiles(affectedFiles: AffectedFile[]) {
-		const affectedFilesMap = new Map<string, AffectedFileStatus>();
+	public addAffectedFiles(affectedFiles: AffectedFile[]) {
+		const affectedFilesMap = this.affectedFilesStatusMap || new Map<string, AffectedFileStatus>();
+		let newFiles = 0;
 		for (const file of affectedFiles) {
-			affectedFilesMap.set(file.key, { emmitted: false, requested: false });
+			if (!affectedFilesMap.has(file.key)) {
+				affectedFilesMap.set(file.key, { requested: false, emmitted: false });
+				newFiles++;
+			}
 		}
 		this.affectedFilesStatusMap = affectedFilesMap;
-		this.affectedFilesRemainingEmitCount = affectedFiles.length;
+		this.affectedFilesRemainingEmitCount += newFiles;
+	}
+
+	public notifyAffectedFilesCalculated(document: TextDocument) {
+		const pendingSave = this.pendingSaves.get(document.fileName);
+		if (!pendingSave) {
+			return;
+		}
+
+		pendingSave.affectedFilesCalculated = true;
+
+		if (this.haveAllPendingsHadFilesCalculated()) {
+			this.allAffectedFilesCalculated = true;
+			const numPendings = this.pendingSaves.size;
+			if (numPendings === 1) {
+				const filename = this.pendingSaves.keys().next().value!;
+				this.pendingSavesDescription = path.basename(filename);
+			}
+			else {
+				this.pendingSavesDescription = `${numPendings} saved documents`;
+			}
+
+			// potentially all saves results in no files changed?			
+			if (this.affectedFilesRemainingEmitCount) {
+				this.dispose();
+			}
+		}
 	}
 
 	public shouldRequestEmitForAffectedFile(file: AffectedFile): boolean {
-		if (!this.affectedFilesStatusMap.has(file.key)) {
+		const affectedFileStatus = this.affectedFilesStatusMap.get(file.key);
+		if (!affectedFileStatus) {
 			console.warn(`shouldRequestEmitForAffectedFile called for unknown AffectedFile ${file.key}`);
 			return false;
 		}
 
-		const affectedFileStatus = this.affectedFilesStatusMap.get(file.key);
-		if (affectedFileStatus && affectedFileStatus.requested) {
+		if (affectedFileStatus.requested) {
 			console.log(`Already emitted: ${file}`);
 			return false;
 		}
 
+		affectedFileStatus.requested = true;
 		return true;
 	}
 
 	public notifyEmitComplete(file: AffectedFile) {
-		if (!this.affectedFilesStatusMap.has(file.key)) {
+		const affectedFile = this.affectedFilesStatusMap.get(file.key);
+		if (!affectedFile) {
 			console.warn(`notifyEmitComplete called for unknown hash '${file.key}'`);
 			return;
 		}
 
-		const affectedFile = this.affectedFilesStatusMap.get(file.key);
-
-		if (affectedFile && affectedFile.emmitted) {
+		if (affectedFile.emmitted) {
 			console.warn(`notifyEmitComplete called for already-emmitted file '${file.key}'`);
 			return;
 		}
+
+		affectedFile.emmitted = true;
 		this.affectedFilesRemainingEmitCount--;
 
-		if (this.affectedFilesRemainingEmitCount === 0) {
+		if (this.affectedFilesRemainingEmitCount === 0 && this.allPendingSavesCompleted) {
 			const elapsed = Date.now() - this.firstDidSaveTimestamp;
 			this.updateStatusBarMessage(`$(check) Compiled in ${elapsed} ms`, COMPILED_MESSAGE_DURATION);
+		} else {
+			if (this.pendingSavesEmitted || this.allPendingSavesCompleted) {
+				this.pendingSavesEmitted = true;
+				this.updateStatusBarMessage(`$(checklist) Compiled ${this.pendingSavesDescription}. ${this.affectedFilesRemainingEmitCount} affected files remaining...`);
+			}
 		}
 	}
 
+	public notifyExpired() {
+		this.dismissStatusBarMessage();
+	}
+
 	public dispose() {
-		if (this.compileStatusBarMessage) {
-			this.compileStatusBarMessage.dispose();
-			this.compileStatusBarMessage = null;
-		}
+		this.dismissStatusBarMessage();
 	}
 }
 
@@ -371,6 +430,11 @@ interface AffectedFile {
 interface AffectedFileStatus {
 	requested: boolean;
 	emmitted: boolean;
+}
+
+interface PendingFileStatus {
+	didSave: boolean;
+	affectedFilesCalculated: boolean;
 }
 
 function partition<T>(this: void, array: T[], fn: (el: T, i: number, ary: T[]) => boolean): [T[], T[]] {
@@ -391,6 +455,20 @@ function hash<T>(this: void, array: T[]): Map<T, boolean> {
 		map.set(item, true);
 	}
 	return map;
+}
+
+function flattenProjectsFileList(this: void, projects: protocol.CompileOnSaveAffectedFileListSingleProject[]) {
+	const fileList: AffectedFile[] = [];
+	for (const project of projects) {
+		for (const filename of project.fileNames) {
+			fileList.push({
+				key: hashAffectedFile(filename, project.projectFileName),
+				projectFileName: project.projectFileName,
+				filename: filename
+			});
+		}
+	}
+	return fileList;
 }
 
 const hashAffectedFile = (filename: string, projectFileName: string): string => `${projectFileName || ''}|${filename}`;
