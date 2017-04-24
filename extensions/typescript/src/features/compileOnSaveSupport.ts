@@ -364,7 +364,7 @@ class CompileOnSaveMultipleFileBatcher {
 			}
 
 			// potentially all saves results in no files changed?			
-			if (this.affectedFilesRemainingEmitCount) {
+			if (this.affectedFilesRemainingEmitCount === 0) {
 				this.dispose();
 			}
 		}
