@@ -53,15 +53,15 @@ export default class TypeScriptCompileOnSaveSupport {
 
 	public clearCachedEnabledStatuses() {
 		this.enabledCache.clear();
-	} 
+	}
 
-	private async isCompileOnSaveEnabledForFile(filename: string, timeout: number): Promise<boolean> {
+	private async isCompileOnSaveEnabledForFile(filename: string, timeout: number, timeoutDefault: boolean = false): Promise<boolean> {
 		// make sure that checking for compileOnSave enabled doesn't take
-		// long than 1500ms (we allow max of 1s)
+		// longer than 1500ms (we allow max of 1s)
 		// see: https://code.visualstudio.com/docs/extensionAPI/vscode-api#workspace.onWillSaveTextDocument
 		const enabled = await Promise.race([
 			this.enabledCache.isEnabledForFile(filename),
-			new Promise(resolve => setTimeout(() => resolve(false), timeout))
+			new Promise(resolve => setTimeout(() => resolve(timeoutDefault), timeout))
 		]);
 
 		console.log(`compileOnSave: ${enabled} --> ${filename}`);
