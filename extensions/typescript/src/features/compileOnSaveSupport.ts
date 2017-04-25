@@ -64,8 +64,6 @@ export default class TypeScriptCompileOnSaveSupport {
 			new Promise(resolve => setTimeout(() => resolve(timeoutDefault), timeout))
 		]);
 
-		console.log(`compileOnSave: ${enabled} --> ${filename}`);
-
 		return enabled;
 	}
 
