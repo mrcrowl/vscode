@@ -2,7 +2,7 @@
   "name": "typescript",
   "description": "Extension to add Typescript capabilities to VSCode.",
   "displayName": "TypeScript support for VSCode",
-  "version": "0.10.6",
+  "version": "0.10.8",
   "author": "Microsoft Corporation",
   "license": "MIT",
   "publisher": "vscode",

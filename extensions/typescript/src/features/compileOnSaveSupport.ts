@@ -11,6 +11,7 @@ import { TextDocument, Disposable, TextDocumentWillSaveEvent, window, workspace,
 import * as protocol from '../protocol';
 import { ITypescriptServiceClient } from '../typescriptService';
 import * as path from "path";
+import * as fs from 'fs';
 
 let nextBatchId: number = 0;
 
@@ -18,18 +19,21 @@ let nextBatchId: number = 0;
 const BATCH_ISOLATION_TIME = 2000;
 const BATCH_EXPIRY_TIME = 15000;
 const COMPILED_MESSAGE_DURATION = 3000;
+const MAX_WILL_SAVE_WAIT_TIME = 1000;
 
 export default class TypeScriptCompileOnSaveSupport {
 	private client: ITypescriptServiceClient;
 	private watchedLanguageModeIds: Map<string, boolean>;
 	private disposables: Disposable[] = [];
 	private batches: CompileOnSaveMultipleFileBatcher[];
+	private enabledCache: CompileOnSaveEnabledCache;
 	private get openBatches() { return this.batches.filter(b => b.open); }
 
 	constructor(client: ITypescriptServiceClient, languageModeIds: string[]) {
 		this.client = client;
 		this.batches = [];
 		this.watchedLanguageModeIds = hash(languageModeIds);
+		this.enabledCache = new CompileOnSaveEnabledCache(client);
 	}
 
 	private watchingLanguage(languageId: string): boolean {
@@ -47,13 +51,32 @@ export default class TypeScriptCompileOnSaveSupport {
 		}
 	}
 
-	// public clearCachedEnabledStatuses() {
-	// 	this.enabledCache.clear();
-	// }
+	public clearCachedEnabledStatuses() {
+		this.enabledCache.clear();
+	} 
 
-	public onWillSaveTextDocument(e: TextDocumentWillSaveEvent) {
+	private async isCompileOnSaveEnabledForFile(filename: string, timeout: number): Promise<boolean> {
+		// make sure that checking for compileOnSave enabled doesn't take
+		// long than 1500ms (we allow max of 1s)
+		// see: https://code.visualstudio.com/docs/extensionAPI/vscode-api#workspace.onWillSaveTextDocument
+		const enabled = await Promise.race([
+			this.enabledCache.isEnabledForFile(filename),
+			new Promise(resolve => setTimeout(() => resolve(false), timeout))
+		]);
+
+		console.log(`compileOnSave: ${enabled} --> ${filename}`);
+
+		return enabled;
+	}
+
+	public async onWillSaveTextDocument(e: TextDocumentWillSaveEvent) {
 		// optimised early exit: no doc, doc not TS, compileOnSave disabled for file
 		if (!(e.document && this.watchingLanguage(e.document.languageId))) {
+			return;
+		}
+
+		const enabled = await this.isCompileOnSaveEnabledForFile(e.document.fileName, MAX_WILL_SAVE_WAIT_TIME);
+		if (!enabled) {
 			return;
 		}
 
@@ -166,66 +189,72 @@ export default class TypeScriptCompileOnSaveSupport {
 	}
 }
 
-// class CompileOnSaveEnabledCache {
-// 	private client: ITypescriptServiceClient;
-// 	private enabledPerFile: Map<boolean>;
-// 	private enabledPerConfig: Map<boolean>;
+class CompileOnSaveEnabledCache {
+	private client: ITypescriptServiceClient;
+	private enabledPerFile: Map<string, boolean>;
+	private enabledPerConfig: Map<string, boolean>;
 
-// 	constructor(client: ITypescriptServiceClient) {
-// 		this.client = client;
-// 		this.clear();
-// 	}
+	constructor(client: ITypescriptServiceClient) {
+		this.client = client;
+		this.clear();
+	}
 
-// 	public clear() {
-// 		this.enabledPerFile = Object.create(null);
-// 		this.enabledPerConfig = Object.create(null);
-// 	}
+	public clear() {
+		this.enabledPerFile = new Map();
+		this.enabledPerConfig = new Map();
+	}
 
-// 	public isDisabledForFile(file: string): boolean {
-// 		return this.enabledPerFile[file] === false;
-// 	}
+	public async isEnabledForFile(file: string): Promise<boolean> {
+		return await this.getStatusForFile(file) === true;
+	}
 
-// 	public getStatusForFile(file: string): Promise<boolean> {
-// 		if (file in this.enabledPerFile) {
-// 			const enabled = this.enabledPerFile[file];
-// 			return Promise.resolve(enabled);
-// 		} else {
-// 			const projectInfo = this.client.execute('projectInfo', { file: file, needFileNameList: false });
-// 			projectInfo.then(response => {
-// 				console.log("projectInfo returned: " + response.body.configFileName);
-// 				const configFileName = response.body.configFileName;
-// 				if (configFileName) {
-// 					if (configFileName in this.enabledPerConfig) {
-// 						const enabled = this.enabledPerConfig[configFileName];
-// 						this.enabledPerFile[file] = enabled;
-// 						return enabled;
-// 					}
+	private async getStatusForFile(file: string): Promise<boolean> {
+		let enabled: boolean | undefined = this.enabledPerFile.get(file);
 
-// 					const enabled = this.readConfigFileCompileOnSaveOption(configFileName);
-// 					if (enabled !== undefined) {
-// 						this.enabledPerFile[file] = enabled;
-// 						this.enabledPerConfig[configFileName] = enabled;
-// 						return enabled;
-// 					}
-// 				}
-// 				return false;
-// 			}, reason => {
-// 				console.error("getStatusForFile", reason);
-// 				return false
-// 			});
-// 		}
-// 	}
+		if (enabled !== undefined) {
+			return enabled;
+		} else {
+			try {
+				const eventualProjectInfo = await this.client.execute('projectInfo', { file: file, needFileNameList: false });
+				const projectInfo = eventualProjectInfo.body;
 
-// 	private readConfigFileCompileOnSaveOption(configFileName: string): boolean | undefined {
-// 		try {
-// 			const tsconfig = JSON.parse(fs.readFileSync(configFileName, 'utf8'));
-// 			return tsconfig.compileOnSave || false;
-// 		}
-// 		catch (e) {
-// 			return undefined;
-// 		}
-// 	}
-// }
+				if (projectInfo) {
+					const configFileName = projectInfo.configFileName;
+					console.log("projectInfo returned: " + projectInfo.configFileName);
+
+					enabled = this.enabledPerConfig.get(configFileName);
+					if (enabled !== undefined) {
+						this.enabledPerFile.set(file, enabled);
+						return enabled;
+					}
+
+					enabled = this.readConfigFileCompileOnSaveOption(configFileName);
+					if (enabled !== undefined) {
+						this.enabledPerFile.set(file, enabled);
+						this.enabledPerConfig.set(configFileName, enabled);
+						return enabled;
+					}
+				}
+
+				return false;
+			}
+			catch (e) {
+				console.error("getStatusForFile", e);
+				return false;
+			}
+		}
+	}
+
+	private readConfigFileCompileOnSaveOption(configFileName: string): boolean | undefined {
+		try {
+			const tsconfig = JSON.parse(fs.readFileSync(configFileName, 'utf8'));
+			return tsconfig.compileOnSave || false;
+		}
+		catch (e) {
+			return undefined;
+		}
+	}
+}
 
 class CompileOnSaveMultipleFileBatcher {
 	public readonly id: number;
