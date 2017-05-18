@@ -50,14 +50,13 @@ export function convertSettings(oldSettings: ITokenColorizationRule[], resultRul
 }
 
 addSettingMapping('background', colorRegistry.editorBackground);
+addSettingMapping('foreground', colorRegistry.editorForeground);
 addSettingMapping('selection', colorRegistry.editorSelection);
 addSettingMapping('inactiveSelection', colorRegistry.editorInactiveSelection);
 addSettingMapping('selectionHighlightColor', colorRegistry.editorSelectionHighlight);
 addSettingMapping('findMatchHighlight', colorRegistry.editorFindMatchHighlight);
 addSettingMapping('currentFindMatchHighlight', colorRegistry.editorFindMatch);
 addSettingMapping('hoverHighlight', editorHoverHighlight);
-addSettingMapping('hoverHighlight', editorHoverHighlight);
-addSettingMapping('linkForeground', colorRegistry.editorLinkForeground);
 addSettingMapping('wordHighlight', wordHighlighter.editorWordHighlight);
 addSettingMapping('wordHighlightStrong', wordHighlighter.editorWordHighlightStrong);
 addSettingMapping('findRangeHighlight', colorRegistry.editorFindRangeHighlight);

@@ -5,7 +5,6 @@
 
 'use strict';
 
-import { IHTMLContentElement } from 'vs/base/common/htmlContent';
 import { OperatingSystem } from 'vs/base/common/platform';
 
 /**
@@ -185,6 +184,11 @@ export const enum KeyCode {
 	NUMPAD_SUBTRACT = 106,	// VK_SUBTRACT, 0x6D, Subtract key
 	NUMPAD_DECIMAL = 107,	// VK_DECIMAL, 0x6E, Decimal key
 	NUMPAD_DIVIDE = 108,	// VK_DIVIDE, 0x6F,
+
+	/**
+	 * Cover all key codes when IME is processing input.
+	 */
+	KEY_IN_COMPOSITION = 109,
 
 	/**
 	 * Placed last to cover the length of the enum.
@@ -551,13 +555,17 @@ export abstract class ResolvedKeybinding {
 	 */
 	public abstract getLabel(): string;
 	/**
+	 * Returns the UI label of the binding without modifiers
+	 */
+	public abstract getLabelWithoutModifiers(): string;
+	/**
 	 * This prints the binding in a format suitable for ARIA.
 	 */
 	public abstract getAriaLabel(): string;
 	/**
-	 * This prints the binding in a format suitable for displaying in the UI.
+	 * Returns the ARIA label of the bindings without modifiers
 	 */
-	public abstract getHTMLLabel(): IHTMLContentElement[];
+	public abstract getAriaLabelWithoutModifiers(): string;
 	/**
 	 * This prints the binding in a format suitable for electron's accelerators.
 	 * See https://github.com/electron/electron/blob/master/docs/api/accelerator.md
@@ -601,4 +609,8 @@ export abstract class ResolvedKeybinding {
 	 * Returns the firstPart, chordPart that should be used for dispatching.
 	 */
 	public abstract getDispatchParts(): [string, string];
+	/**
+	 * Returns the firstPart, chordPart of the keybinding
+	 */
+	public abstract getParts(): [ResolvedKeybinding, ResolvedKeybinding];
 }

@@ -74,7 +74,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 		capabilities: {
 			// Tell the client that the server works in FULL text document sync mode
 			textDocumentSync: documents.syncKind,
-			completionProvider: clientDynamicRegisterSupport ? { resolveProvider: true, triggerCharacters: ['"', ':'] } : null,
+			completionProvider: clientSnippetSupport ? { resolveProvider: true, triggerCharacters: ['"', ':'] } : null,
 			hoverProvider: true,
 			documentSymbolProvider: true,
 			documentRangeFormattingProvider: false
@@ -276,6 +276,12 @@ connection.onDidChangeWatchedFiles((change) => {
 });
 
 let jsonDocuments = getLanguageModelCache<JSONDocument>(10, 60, document => languageService.parseJSONDocument(document));
+documents.onDidClose(e => {
+	jsonDocuments.onDocumentRemoved(e.document);
+});
+connection.onShutdown(() => {
+	jsonDocuments.dispose();
+});
 
 function getJSONDocument(document: TextDocument): JSONDocument {
 	return jsonDocuments.get(document);

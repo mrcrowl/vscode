@@ -52,8 +52,8 @@ export abstract class ViewerViewlet extends Viewlet {
 		this.viewer = this.createViewer(this.viewerContainer);
 
 		// Eventing
-		this.toUnbind.push(this.viewer.addListener2('selection', (e: ISelectionEvent) => this.onSelection(e)));
-		this.toUnbind.push(this.viewer.addListener2('focus', (e: IFocusEvent) => this.onFocus(e)));
+		this.toUnbind.push(this.viewer.addListener('selection', (e: ISelectionEvent) => this.onSelection(e)));
+		this.toUnbind.push(this.viewer.addListener('focus', (e: IFocusEvent) => this.onFocus(e)));
 
 		return TPromise.as(null);
 	}
@@ -341,7 +341,7 @@ export abstract class AdaptiveCollapsibleViewletView extends FixedCollapsibleVie
 		// Tool bar
 		this.toolBar = new ToolBar($('div.actions').appendTo(container).getHTMLElement(), this.contextMenuService, {
 			orientation: ActionsOrientation.HORIZONTAL,
-			actionItemProvider: (action) => { return this.getActionItem(action); },
+			actionItemProvider: (action) => this.getActionItem(action),
 			ariaLabel: nls.localize('viewToolbarAriaLabel', "{0} actions", this.viewName),
 			getKeyBinding: (action) => this.keybindingService.lookupKeybinding(action.id)
 		});
@@ -440,7 +440,7 @@ export abstract class CollapsibleViewletView extends CollapsibleView implements 
 		collapsed: boolean,
 		private viewName: string,
 		protected messageService: IMessageService,
-		private keybindingService: IKeybindingService,
+		protected keybindingService: IKeybindingService,
 		protected contextMenuService: IContextMenuService,
 		headerSize?: number
 	) {
@@ -470,7 +470,7 @@ export abstract class CollapsibleViewletView extends CollapsibleView implements 
 		// Tool bar
 		this.toolBar = new ToolBar($('div.actions').appendTo(container).getHTMLElement(), this.contextMenuService, {
 			orientation: ActionsOrientation.HORIZONTAL,
-			actionItemProvider: (action) => { return this.getActionItem(action); },
+			actionItemProvider: (action) => this.getActionItem(action),
 			ariaLabel: nls.localize('viewToolbarAriaLabel', "{0} actions", this.viewName),
 			getKeyBinding: (action) => this.keybindingService.lookupKeybinding(action.id)
 		});

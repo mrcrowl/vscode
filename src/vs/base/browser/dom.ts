@@ -669,11 +669,11 @@ export function findParentWithClass(node: HTMLElement, clazz: string, stopAtClaz
 	return null;
 }
 
-export function createStyleSheet(): HTMLStyleElement {
+export function createStyleSheet(container: HTMLElement = document.getElementsByTagName('head')[0]): HTMLStyleElement {
 	let style = document.createElement('style');
 	style.type = 'text/css';
 	style.media = 'screen';
-	document.getElementsByTagName('head')[0].appendChild(style);
+	container.appendChild(style);
 	return style;
 }
 
@@ -746,6 +746,7 @@ export function isHTMLElement(o: any): o is HTMLElement {
 export const EventType = {
 	// Mouse
 	CLICK: 'click',
+	AUXCLICK: 'auxclick', // >= Chrome 56
 	DBLCLICK: 'dblclick',
 	MOUSE_UP: 'mouseup',
 	MOUSE_DOWN: 'mousedown',
@@ -876,11 +877,11 @@ class FocusTracker extends Disposable implements IFocusTracker {
 	}
 
 	public addFocusListener(fn: () => void): IDisposable {
-		return this._eventEmitter.addListener2('focus', fn);
+		return this._eventEmitter.addListener('focus', fn);
 	}
 
 	public addBlurListener(fn: () => void): IDisposable {
-		return this._eventEmitter.addListener2('blur', fn);
+		return this._eventEmitter.addListener('blur', fn);
 	}
 }
 

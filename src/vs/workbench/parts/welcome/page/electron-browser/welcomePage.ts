@@ -7,8 +7,6 @@
 import 'vs/css!./welcomePage';
 import URI from 'vs/base/common/uri';
 import * as path from 'path';
-import * as platform from 'vs/base/common/platform';
-import * as strings from 'vs/base/common/strings';
 import * as arrays from 'vs/base/common/arrays';
 import { WalkThroughInput } from 'vs/workbench/parts/welcome/walkThrough/node/walkThroughInput';
 import { IWorkbenchContribution } from 'vs/workbench/common/contributions';
@@ -34,6 +32,10 @@ import { IExtensionEnablementService, IExtensionManagementService, IExtensionGal
 import { used } from 'vs/workbench/parts/welcome/page/electron-browser/vs_code_welcome_page';
 import { ILifecycleService } from 'vs/platform/lifecycle/common/lifecycle';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
+import { tildify } from 'vs/base/common/labels';
+import { editorBackground } from 'vs/platform/theme/common/colorRegistry';
+import { Themable } from 'vs/workbench/common/theme';
+import { IThemeService, ITheme } from 'vs/platform/theme/common/themeService';
 
 used();
 
@@ -98,6 +100,28 @@ const reorderedQuickLinks = [
 	'showInteractivePlayground',
 ];
 
+class WelcomeTheming extends Themable {
+
+	constructor(
+		themeService: IThemeService,
+		private container: HTMLElement
+	) {
+		super(themeService);
+		this.update(themeService.getTheme());
+	}
+
+	protected onThemeChange(theme: ITheme): void {
+		super.onThemeChange(theme);
+		this.update(theme);
+	}
+
+	private update(theme: ITheme): void {
+		const background = theme.getColor(editorBackground);
+		const page = this.container.querySelector('.welcomePage') as HTMLElement;
+		page.classList.toggle('extra-dark', background.getLuminosity() < 0.004);
+	}
+}
+
 class WelcomePage {
 
 	private disposables: IDisposable[] = [];
@@ -116,6 +140,7 @@ class WelcomePage {
 		@IExtensionGalleryService private extensionGalleryService: IExtensionGalleryService,
 		@IExtensionManagementService private extensionManagementService: IExtensionManagementService,
 		@ILifecycleService lifecycleService: ILifecycleService,
+		@IThemeService private themeService: IThemeService,
 		@ITelemetryService private telemetryService: ITelemetryService
 	) {
 		this.disposables.push(lifecycleService.onShutdown(() => this.dispose()));
@@ -146,7 +171,7 @@ class WelcomePage {
 				.then(null, error => this.messageService.show(Severity.Error, error));
 		});
 
-		recentlyOpened.then(({folders}) => {
+		recentlyOpened.then(({ folders }) => {
 			if (this.contextService.hasWorkspace()) {
 				const current = this.contextService.getWorkspace().resource.fsPath;
 				folders = folders.filter(folder => folder !== current);
@@ -184,10 +209,7 @@ class WelcomePage {
 
 				const span = document.createElement('span');
 				span.classList.add('path');
-				if ((platform.isMacintosh || platform.isLinux) && strings.startsWith(parentFolder, this.environmentService.userHome)) {
-					parentFolder = `~${parentFolder.substr(this.environmentService.userHome.length)}`;
-				}
-				span.innerText = parentFolder;
+				span.innerText = tildify(parentFolder, this.environmentService.userHome);
 				span.title = folder;
 				li.appendChild(span);
 
@@ -228,6 +250,8 @@ class WelcomePage {
 				}
 			};
 		}));
+
+		this.disposables.push(new WelcomeTheming(this.themeService, container));
 	}
 
 	private installKeymap(keymapName: string, keymapIdentifier: string): void {

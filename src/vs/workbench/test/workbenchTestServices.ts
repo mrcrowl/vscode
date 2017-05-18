@@ -158,7 +158,7 @@ export class TestTextFileService extends TextFileService {
 			const error = this.resolveTextContentError;
 			this.resolveTextContentError = null;
 
-			return TPromise.wrapError(error);
+			return TPromise.wrapError<IRawTextContent>(error);
 		}
 
 		return this.fileService.resolveContent(resource, options).then((content) => {
@@ -191,8 +191,6 @@ export class TestTextFileService extends TextFileService {
 		this.cleanupBackupsBeforeShutdownCalled = true;
 		return TPromise.as(void 0);
 	}
-
-	public showHotExitMessage(): void { }
 }
 
 export function workbenchInstantiationService(): IInstantiationService {
@@ -568,8 +566,8 @@ export class TestEditorService implements IWorkbenchEditorService {
 		return TPromise.as(null);
 	}
 
-	public createInput(input: IResourceInput): TPromise<IEditorInput> {
-		return TPromise.as(null);
+	public createInput(input: IResourceInput): IEditorInput {
+		return null;
 	}
 }
 
@@ -775,6 +773,10 @@ export class TestWindowService implements IWindowService {
 
 	public _serviceBrand: any;
 
+	isFocused(): TPromise<boolean> {
+		return TPromise.as(false);
+	}
+
 	getCurrentWindowId(): number {
 		return 0;
 	}
@@ -885,6 +887,10 @@ export class TestWindowsService implements IWindowsService {
 
 	onWindowOpen: Event<number>;
 	onWindowFocus: Event<number>;
+
+	isFocused(windowId: number): TPromise<boolean> {
+		return TPromise.as(false);
+	}
 
 	openFileFolderPicker(windowId: number, forceNewWindow?: boolean): TPromise<void> {
 		return TPromise.as(void 0);
