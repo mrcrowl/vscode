@@ -22,7 +22,7 @@ import { CancellationToken } from 'vs/base/common/cancellation';
 import { Mode, IEntryRunContext, IAutoFocus, IQuickNavigateConfiguration, IModel } from 'vs/base/parts/quickopen/common/quickOpen';
 import { QuickOpenEntry, QuickOpenModel, QuickOpenEntryGroup } from 'vs/base/parts/quickopen/browser/quickOpenModel';
 import { QuickOpenWidget, HideReason } from 'vs/base/parts/quickopen/browser/quickOpenWidget';
-import { ContributableActionProvider } from 'vs/workbench/browser/actionBarRegistry';
+import { ContributableActionProvider } from 'vs/workbench/browser/actions';
 import labels = require('vs/base/common/labels');
 import paths = require('vs/base/common/paths');
 import { ITextFileService, AutoSaveMode } from 'vs/workbench/services/textfile/common/textfiles';
@@ -49,7 +49,7 @@ import { IContextKeyService, RawContextKey, IContextKey } from 'vs/platform/cont
 import { IHistoryService } from 'vs/workbench/services/history/common/history';
 import { IListService } from 'vs/platform/list/browser/listService';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
-import { SIDE_BAR_BACKGROUND } from 'vs/workbench/common/theme';
+import { SIDE_BAR_BACKGROUND, SIDE_BAR_FOREGROUND } from 'vs/workbench/common/theme';
 import { attachQuickOpenStyler } from 'vs/platform/theme/common/styler';
 import { IEnvironmentService } from 'vs/platform/environment/common/environment';
 
@@ -216,7 +216,7 @@ export class QuickOpenController extends Component implements IQuickOpenService 
 		return new TPromise(init).then(item => {
 			return currentValidation.then(valid => {
 				if (valid && item) {
-					return lastValue || options.value || '';
+					return lastValue === void 0 ? (options.value || '') : lastValue;
 				}
 				return undefined;
 			});
@@ -291,7 +291,7 @@ export class QuickOpenController extends Component implements IQuickOpenService 
 				},
 				this.telemetryService
 			);
-			this.toUnbind.push(attachQuickOpenStyler(this.pickOpenWidget, this.themeService, { background: SIDE_BAR_BACKGROUND }));
+			this.toUnbind.push(attachQuickOpenStyler(this.pickOpenWidget, this.themeService, { background: SIDE_BAR_BACKGROUND, foreground: SIDE_BAR_FOREGROUND }));
 
 			const pickOpenContainer = this.pickOpenWidget.create();
 			this.toUnbind.push(this.listService.register(this.pickOpenWidget.getTree()));
@@ -553,7 +553,7 @@ export class QuickOpenController extends Component implements IQuickOpenService 
 				},
 				this.telemetryService
 			);
-			this.toUnbind.push(attachQuickOpenStyler(this.quickOpenWidget, this.themeService, { background: SIDE_BAR_BACKGROUND }));
+			this.toUnbind.push(attachQuickOpenStyler(this.quickOpenWidget, this.themeService, { background: SIDE_BAR_BACKGROUND, foreground: SIDE_BAR_FOREGROUND }));
 
 			const quickOpenContainer = this.quickOpenWidget.create();
 			this.toUnbind.push(this.listService.register(this.quickOpenWidget.getTree()));
@@ -860,10 +860,11 @@ export class QuickOpenController extends Component implements IQuickOpenService 
 
 		// Show additional handler results below any existing results
 		if (additionalHandlerResults.length > 0) {
+			const autoFocusFirstEntry = (quickOpenModel.getEntries().length === 0); // the user might have selected another entry meanwhile in local history (see https://github.com/Microsoft/vscode/issues/20828)
 			const useTopBorder = quickOpenModel.getEntries().length > 0;
 			additionalHandlerResults[0] = new QuickOpenEntryGroup(additionalHandlerResults[0], groupLabel, useTopBorder);
 			quickOpenModel.addEntries(additionalHandlerResults);
-			this.quickOpenWidget.refresh(quickOpenModel, { autoFocusFirstEntry: true });
+			this.quickOpenWidget.refresh(quickOpenModel, { autoFocusFirstEntry });
 		}
 
 		// Otherwise if no results are present (even from histoy) indicate this to the user

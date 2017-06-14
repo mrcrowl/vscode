@@ -6,8 +6,7 @@
 {
 	"selectTheme.label": "Цветовая тема",
 	"installColorThemes": "Установить дополнительные цветовые темы...",
-	"problemChangingTheme": "Проблема при задании темы: {0}",
-	"themes.selectTheme": "Выберите цветовую тему",
+	"themes.selectTheme": "Выберите цветовую тему (используйте клавиши стрелок вверх и вниз для предварительного просмотра)",
 	"selectIconTheme.label": "Тема значков файлов",
 	"installIconThemes": "Установить дополнительные темы значков файлов...",
 	"noIconThemeLabel": "Нет",

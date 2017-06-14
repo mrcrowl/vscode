@@ -1,4 +1,7 @@
 {
+	"rulesDirectory": [
+		"build/lib/tslint"
+	],
 	"rules": {
 		"no-unused-expression": true,
 		"no-duplicate-variable": true,
@@ -63,7 +66,8 @@
 				"node",
 				"electron-main",
 				"electron-browser",
-				"extensions"
+				"extensions",
+				"smoke"
 			]
 		]
 	}

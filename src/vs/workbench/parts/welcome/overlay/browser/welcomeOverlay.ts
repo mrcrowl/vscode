@@ -17,12 +17,14 @@ import { localize } from 'vs/nls';
 import { Action } from 'vs/base/common/actions';
 import { IWorkbenchActionRegistry, Extensions } from 'vs/workbench/common/actionRegistry';
 import { SyncActionDescriptor } from 'vs/platform/actions/common/actions';
-import SCMPreview from 'vs/workbench/parts/scm/browser/scmPreview';
 import { ICommandService } from 'vs/platform/commands/common/commands';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import { RawContextKey, IContextKey, IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
 import { KeyCode } from 'vs/base/common/keyCodes';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+import { registerThemingParticipant } from 'vs/platform/theme/common/themeService';
+import { textPreformatForeground, foreground } from 'vs/platform/theme/common/colorRegistry';
+import { Color } from 'vs/base/common/color';
 
 interface Key {
 	id: string;
@@ -50,7 +52,7 @@ const keys: Key[] = [
 		id: 'git',
 		arrow: '&larr;',
 		label: localize('welcomeOverlay.git', "Source code management"),
-		command: SCMPreview.enabled ? 'workbench.view.scm' : 'workbench.view.git'
+		command: 'workbench.view.scm'
 	},
 	{
 		id: 'debug',
@@ -234,3 +236,20 @@ Registry.as<IWorkbenchActionRegistry>(Extensions.WorkbenchActions)
 
 Registry.as<IWorkbenchActionRegistry>(Extensions.WorkbenchActions)
 	.registerWorkbenchAction(new SyncActionDescriptor(HideWelcomeOverlayAction, HideWelcomeOverlayAction.ID, HideWelcomeOverlayAction.LABEL, { primary: KeyCode.Escape }, OVERLAY_VISIBLE), 'Help: Hide Interface Overview', localize('help', "Help"));
+
+// theming
+
+registerThemingParticipant((theme, collector) => {
+	const key = theme.getColor(foreground);
+	if (key) {
+		collector.addRule(`.monaco-workbench > .welcomeOverlay > .key { color: ${key}; }`);
+	}
+	const backgroundColor = Color.fromHex(theme.type === 'light' ? '#FFFFFF85' : '#00000085');
+	if (backgroundColor) {
+		collector.addRule(`.monaco-workbench > .welcomeOverlay { background: ${backgroundColor}; }`);
+	}
+	const shortcut = theme.getColor(textPreformatForeground);
+	if (shortcut) {
+		collector.addRule(`.monaco-workbench > .welcomeOverlay > .key > .shortcut { color: ${shortcut}; }`);
+	}
+});

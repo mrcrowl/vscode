@@ -14,6 +14,7 @@
 		"pickerGroup.foreground": "#e3b583",
 		"pickerGroup.border": "#e3b583",
 		"inputOption.activeBorder": "#a57a4c",
+		"selection.background": "#84613daa",
 		"editor.selectionBackground": "#84613daa",
 		"editorWidget.background": "#131510",
 		"editorHoverWidget.background": "#221a14",
@@ -26,7 +27,6 @@
 		"statusBar.noFolderBackground": "#423523",
 		"activityBar.background": "#221a0f",
 		"activityBar.foreground": "#d3af86",
-		"activityBarBadge.background": "#7f5d38",
 		"sideBar.background": "#362712",
 		"editor.lineHighlightBackground": "#5e452b",
 		"editorCursor.foreground": "#d3af86",
@@ -43,7 +43,9 @@
 		"inputValidation.warningBackground": "#51412c",
 		// "inputValidation.warningBorder": "#5B7E7A",
 		"inputValidation.errorBackground": "#5f0d0d",
-		"inputValidation.errorBorder": "#9d2f23"
+		"inputValidation.errorBorder": "#9d2f23",
+		"badge.background": "#7f5d38",
+		"progressBar.background": "#7f5d38"
 	},
 	"tokenColors": [
 		{
@@ -368,7 +370,7 @@
 				"variable.interpolation"
 			],
 			"settings": {
-				"foreground": "#18401e"
+				"foreground": "#088649"
 			}
 		},
 		{

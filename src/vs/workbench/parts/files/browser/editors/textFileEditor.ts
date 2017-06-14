@@ -14,7 +14,7 @@ import { Action } from 'vs/base/common/actions';
 import { VIEWLET_ID, TEXT_FILE_EDITOR_ID } from 'vs/workbench/parts/files/common/files';
 import { ITextFileEditorModel, ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
 import { BaseTextEditor } from 'vs/workbench/browser/parts/editor/textEditor';
-import { EditorOptions, TextEditorOptions, IEditorIdentifier } from 'vs/workbench/common/editor';
+import { EditorOptions, TextEditorOptions, IEditorCloseEvent } from 'vs/workbench/common/editor';
 import { BinaryEditorModel } from 'vs/workbench/common/editor/binaryEditorModel';
 import { FileEditorInput } from 'vs/workbench/parts/files/common/editors/fileEditorInput';
 import { ExplorerViewlet } from 'vs/workbench/parts/files/browser/explorerViewlet';
@@ -28,7 +28,7 @@ import { IHistoryService } from 'vs/workbench/services/history/common/history';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { CancelAction } from 'vs/platform/message/common/message';
 import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
-import { IWorkbenchThemeService } from 'vs/workbench/services/themes/common/workbenchThemeService';
+import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
 import { IModeService } from 'vs/editor/common/services/modeService';
 
@@ -49,7 +49,7 @@ export class TextFileEditor extends BaseTextEditor {
 		@IHistoryService private historyService: IHistoryService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@IWorkbenchEditorService private editorService: IWorkbenchEditorService,
-		@IWorkbenchThemeService themeService: IWorkbenchThemeService,
+		@IThemeService themeService: IThemeService,
 		@IEditorGroupService editorGroupService: IEditorGroupService,
 		@IModeService modeService: IModeService,
 		@ITextFileService textFileService: ITextFileService,
@@ -70,7 +70,7 @@ export class TextFileEditor extends BaseTextEditor {
 		}
 	}
 
-	private onWillCloseEditor(e: IEditorIdentifier): void {
+	private onWillCloseEditor(e: IEditorCloseEvent): void {
 		if (e.editor === this.input && this.position === this.editorGroupService.getStacksModel().positionOfGroup(e.group)) {
 			this.doSaveTextEditorViewState(this.input);
 		}

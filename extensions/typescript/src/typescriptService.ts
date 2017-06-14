@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
 
 import { CancellationToken, Uri, Event } from 'vscode';
 import * as Proto from './protocol';
@@ -64,6 +63,10 @@ export class API {
 
 	public has230Features(): boolean {
 		return semver.gte(this._version, '2.3.0');
+	}
+
+	public has234Features(): boolean {
+		return semver.gte(this._version, '2.3.4');
 	}
 }
 

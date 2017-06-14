@@ -6,8 +6,7 @@
 {
 	"selectTheme.label": "색 테마",
 	"installColorThemes": "추가 색 테마 설치...",
-	"problemChangingTheme": "테마를 설정하는 동안 문제 발생: {0}",
-	"themes.selectTheme": "색 테마 선택",
+	"themes.selectTheme": "색 테마 선택(미리 보려면 위로/아래로 키 사용)",
 	"selectIconTheme.label": "파일 아이콘 테마",
 	"installIconThemes": "추가 파일 아이콘 테마 설치...",
 	"noIconThemeLabel": "없음",

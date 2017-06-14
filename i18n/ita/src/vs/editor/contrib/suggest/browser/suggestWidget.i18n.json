@@ -12,7 +12,7 @@
 	"readMore": "Altre informazioni...{0}",
 	"suggestionWithDetailsAriaLabel": "{0}, suggerimento, con dettagli",
 	"suggestionAriaLabel": "{0}, suggerimento",
-	"goback": "Indietro",
+	"readLess": "Meno informazioni... {0}",
 	"suggestWidget.loading": "Caricamento...",
 	"suggestWidget.noSuggestions": "Non ci sono suggerimenti.",
 	"suggestionAriaAccepted": "{0}, accettato",

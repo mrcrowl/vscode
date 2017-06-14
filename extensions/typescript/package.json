@@ -10,6 +10,7 @@
   "engines": {
     "vscode": "0.11.x"
   },
+  "enableProposedApi": true,
   "dependencies": {
     "semver": "4.3.6",
     "vscode-extension-telemetry": "^0.0.7",
@@ -22,7 +23,7 @@
   },
   "scripts": {
     "postinstall": "node ./bin/postinstall",
-    "update-grammars": "node ./build/update-grammars.js",
+    "update-grammar": "node ./build/update-grammars.js",
     "vscode:prepublish": "tsc -p ./",
     "compile": "tsc -watch -p ./"
   },
@@ -37,7 +38,8 @@
     "onCommand:typescript.selectTypeScriptVersion",
     "onCommand:javascript.goToProjectConfig",
     "onCommand:typescript.goToProjectConfig",
-    "onCommand:typescript.openTsServerLog"
+    "onCommand:typescript.openTsServerLog",
+    "onCommand:workbench.action.tasks.runTask"
   ],
   "main": "./out/typescriptMain",
   "contributes": {
@@ -105,10 +107,24 @@
           "default": true,
           "description": "%typescript.check.tscVersion%"
         },
+        "typescript.npm": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "%typescript.npm%",
+          "isExecutable": true
+        },
         "typescript.check.npmIsInstalled": {
           "type": "boolean",
           "default": true,
           "description": "%typescript.check.npmIsInstalled%"
+        },
+        "javascript.referencesCodeLens.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "%javascript.referencesCodeLens.enabled%"
         },
         "typescript.referencesCodeLens.enabled": {
           "type": "boolean",
@@ -305,6 +321,20 @@
           "type": "boolean",
           "default": false,
           "description": "%javascript.implicitProjectConfig.checkJs%"
+        },
+        "javascript.nameSuggestions": {
+          "type": "boolean",
+          "default": true,
+          "description": "%javascript.nameSuggestions%"
+        },
+        "typescript.tsc.autoDetect": {
+          "type": "string",
+          "default": "on",
+          "enum": [
+            "on",
+            "off"
+          ],
+          "description": "%typescript.tsc.autoDetect%"
         }
       }
     },
@@ -337,6 +367,11 @@
       {
         "command": "typescript.openTsServerLog",
         "title": "%typescript.openTsServerLog.title%",
+        "category": "TypeScript"
+      },
+      {
+        "command": "typescript.restartTsServer",
+        "title": "%typescript.restartTsServer%",
         "category": "TypeScript"
       }
     ],
@@ -447,7 +482,7 @@
           "${cwd}"
         ],
         "pattern": "$tsc",
-        "watching": {
+        "background": {
           "activeOnStart": true,
           "beginsPattern": {
             "regexp": "^\\s*(?:message TS6032:|\\d{1,2}:\\d{1,2}:\\d{1,2}(?: AM| PM)? -) File change detected\\. Starting incremental compilation\\.\\.\\."
