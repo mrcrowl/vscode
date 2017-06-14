@@ -42,7 +42,7 @@ import CodeActionProvider from './features/codeActionProvider';
 import ReferenceCodeLensProvider from './features/referencesCodeLensProvider';
 import { JsDocCompletionProvider, TryCompleteJsDocCommand } from './features/jsDocCompletionProvider';
 import { DirectiveCommentCompletionProvider } from './features/directiveCommentCompletionProvider';
-import TypeScriptTaskProviderManager from './features/taskProvider';
+// import TypeScriptTaskProviderManager from './features/taskProvider';
 
 import ImplementationCodeLensProvider from './features/implementationsCodeLensProvider';
 
@@ -135,7 +135,7 @@ export function activate(context: ExtensionContext): void {
 		lazyClientHost().serviceClient.restartTsServer();
 	}));
 
-	context.subscriptions.push(new TypeScriptTaskProviderManager(() => lazyClientHost().serviceClient));
+	//context.subscriptions.push(new TypeScriptTaskProviderManager(() => lazyClientHost().serviceClient));
 
 	const goToProjectConfig = (isTypeScript: boolean) => {
 		const editor = window.activeTextEditor;
@@ -584,7 +584,7 @@ class TypeScriptServiceClientHost implements ITypescriptServiceClientHost {
 		return this.client.execute('projectInfo', { file, needFileNameList: false } as protocol.ProjectInfoRequestArgs).then(res => {
 			if (!res || !res.body) {
 				return window.showWarningMessage(localize('typescript.projectConfigCouldNotGetInfo', 'Could not determine TypeScript or JavaScript project'))
-					.then(() => void 0);
+					.then(() => void 0); 
 			}
 
 			const { configFileName } = res.body;
