@@ -20,7 +20,7 @@ import { ICommandService } from 'vs/platform/commands/common/commands';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
 import { ViewletDescriptor } from 'vs/workbench/browser/viewlet';
-import { IActivity, IGlobalActivity } from 'vs/workbench/browser/activity';
+import { IActivity, IGlobalActivity } from 'vs/workbench/common/activity';
 import { dispose } from 'vs/base/common/lifecycle';
 import { IViewletService, } from 'vs/workbench/services/viewlet/browser/viewlet';
 import { IPartService, Parts } from 'vs/workbench/services/part/common/partService';
@@ -90,7 +90,11 @@ export class ViewletActivityAction extends ActivityAction {
 		super(viewlet);
 	}
 
-	public run(event): TPromise<any> {
+	public get descriptor(): ViewletDescriptor {
+		return this.viewlet;
+	}
+
+	public run(event: any): TPromise<any> {
 		if (event instanceof MouseEvent && event.button === 2) {
 			return TPromise.as(false); // do not run on right click
 		}
@@ -110,8 +114,7 @@ export class ViewletActivityAction extends ActivityAction {
 			return this.partService.setSideBarHidden(true);
 		}
 
-		return this.viewletService.openViewlet(this.viewlet.id, true)
-			.then(() => this.activate());
+		return this.viewletService.openViewlet(this.viewlet.id, true).then(() => this.activate());
 	}
 }
 
@@ -240,9 +243,26 @@ export class ActivityActionItem extends BaseActionItem {
 			else if (badge instanceof ProgressBadge) {
 				this.$badge.show();
 			}
-
-			this.$label.attr('aria-label', `${this.activity.name} - ${badge.getDescription()}`);
 		}
+
+		// Title
+		let title: string;
+		if (badge && badge.getDescription()) {
+			if (this.activity.name) {
+				title = nls.localize('badgeTitle', "{0} - {1}", this.activity.name, badge.getDescription());
+			} else {
+				title = badge.getDescription();
+			}
+		} else {
+			title = this.activity.name;
+		}
+
+		[this.$label, this.$badge, this.$container].forEach(b => {
+			if (b) {
+				b.attr('aria-label', title);
+				b.title(title);
+			}
+		});
 	}
 
 	private handleBadgeChangeEvenet(): void {
@@ -269,7 +289,7 @@ export class ViewletActionItem extends ActivityActionItem {
 	private static toggleViewletPinnedAction: ToggleViewletPinnedAction;
 	private static draggedViewlet: ViewletDescriptor;
 
-	private _keybinding: string;
+	private viewletActivity: IActivity;
 	private cssClass: string;
 
 	constructor(
@@ -283,7 +303,6 @@ export class ViewletActionItem extends ActivityActionItem {
 		super(action, { draggable: true }, themeService);
 
 		this.cssClass = action.class;
-		this._keybinding = this.getKeybindingLabel(this.viewlet.id);
 
 		if (!ViewletActionItem.manageExtensionAction) {
 			ViewletActionItem.manageExtensionAction = instantiationService.createInstance(ManageExtensionAction);
@@ -294,8 +313,29 @@ export class ViewletActionItem extends ActivityActionItem {
 		}
 	}
 
+	protected get activity(): IActivity {
+		if (!this.viewletActivity) {
+			let activityName: string;
+
+			const keybinding = this.getKeybindingLabel(this.viewlet.id);
+			if (keybinding) {
+				activityName = nls.localize('titleKeybinding', "{0} ({1})", this.viewlet.name, keybinding);
+			} else {
+				activityName = this.viewlet.name;
+			}
+
+			this.viewletActivity = {
+				id: this.viewlet.id,
+				cssClass: this.cssClass,
+				name: activityName
+			};
+		}
+
+		return this.viewletActivity;
+	}
+
 	private get viewlet(): ViewletDescriptor {
-		return this.action.activity as ViewletDescriptor;
+		return this.action.descriptor;
 	}
 
 	private getKeybindingLabel(id: string): string {
@@ -372,9 +412,6 @@ export class ViewletActionItem extends ActivityActionItem {
 			}
 		});
 
-		// Keybinding
-		this.keybinding = this._keybinding; // force update
-
 		// Activate on drag over to reveal targets
 		[this.$badge, this.$label].forEach(b => new DelayedDragHandler(b.getHTMLElement(), () => {
 			if (!ViewletActionItem.getDraggedViewlet() && !this.getAction().checked) {
@@ -413,7 +450,7 @@ export class ViewletActionItem extends ActivityActionItem {
 
 		const isPinned = this.activityBarService.isPinned(this.viewlet.id);
 		if (isPinned) {
-			ViewletActionItem.toggleViewletPinnedAction.label = nls.localize('removeFromActivityBar', "Remove from Activity Bar");
+			ViewletActionItem.toggleViewletPinnedAction.label = nls.localize('removeFromActivityBar', "Hide from Activity Bar");
 		} else {
 			ViewletActionItem.toggleViewletPinnedAction.label = nls.localize('keepInActivityBar', "Keep in Activity Bar");
 		}
@@ -427,24 +464,6 @@ export class ViewletActionItem extends ActivityActionItem {
 
 	public focus(): void {
 		this.$container.domFocus();
-	}
-
-	public set keybinding(keybinding: string) {
-		this._keybinding = keybinding;
-
-		if (!this.$label) {
-			return;
-		}
-
-		let title: string;
-		if (keybinding) {
-			title = nls.localize('titleKeybinding', "{0} ({1})", this.activity.name, keybinding);
-		} else {
-			title = this.activity.name;
-		}
-
-		this.$label.title(title);
-		this.$badge.title(title);
 	}
 
 	protected _updateClass(): void {
@@ -493,7 +512,7 @@ export class ViewletOverflowActivityAction extends ActivityAction {
 		});
 	}
 
-	public run(event): TPromise<any> {
+	public run(event: any): TPromise<any> {
 		this.showMenu();
 
 		return TPromise.as(true);
@@ -518,30 +537,6 @@ export class ViewletOverflowActivityActionItem extends ActivityActionItem {
 
 		this.cssClass = action.class;
 		this.name = action.label;
-	}
-
-	protected updateStyles(): void {
-		const theme = this.themeService.getTheme();
-
-		// Label
-		if (this.$label) {
-			const background = theme.getColor(ACTIVITY_BAR_FOREGROUND);
-
-			this.$label.style('background-color', background ? background.toString() : null);
-		}
-	}
-
-	public render(container: HTMLElement): void {
-		super.render(container);
-
-		this.$label = $('a.action-label').attr({
-			tabIndex: '0',
-			role: 'button',
-			title: this.name,
-			class: this.cssClass
-		}).appendTo(this.builder);
-
-		this.updateStyles();
 	}
 
 	public showMenu(): void {

@@ -4,7 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 'use strict';
 
+import URI from 'vs/base/common/uri';
 import * as Types from 'vs/base/common/types';
+import { IJSONSchemaMap } from 'vs/base/common/jsonSchema';
 
 import { IExtensionDescription } from 'vs/platform/extensions/common/extensions';
 import { ProblemMatcher } from 'vs/platform/markers/common/problemMatcher';
@@ -80,33 +82,80 @@ export namespace RevealKind {
 	}
 }
 
-export interface TerminalBehavior {
+export enum PanelKind {
+
 	/**
-	 * Controls whether the terminal executing a task is brought to front or not.
+	 * Shares a panel with other tasks. This is the default.
+	 */
+	Shared = 1,
+
+	/**
+	 * Uses a dedicated panel for this tasks. The panel is not
+	 * shared with other tasks.
+	 */
+	Dedicated = 2,
+
+	/**
+	 * Creates a new panel whenever this task is executed.
+	 */
+	New = 3
+}
+
+export namespace PanelKind {
+	export function fromString(value: string): PanelKind {
+		switch (value.toLowerCase()) {
+			case 'shared':
+				return PanelKind.Shared;
+			case 'dedicated':
+				return PanelKind.Dedicated;
+			case 'new':
+				return PanelKind.New;
+			default:
+				return PanelKind.Shared;
+		}
+	}
+}
+
+export interface PresentationOptions {
+	/**
+	 * Controls whether the task output is reveal in the user interface.
 	 * Defaults to `RevealKind.Always`.
 	 */
 	reveal: RevealKind;
 
 	/**
-	 * Controls whether the executed command is printed to the output window or terminal as well.
+	 * Controls whether the command associated with the task is echoed
+	 * in the user interface.
 	 */
 	echo: boolean;
+
+	/**
+	 * Controls whether the panel showing the task output is taking focus.
+	 */
+	focus: boolean;
+
+	/**
+	 * Controls if the task panel is used for this task only (dedicated),
+	 * shared between tasks (shared) or if a new panel is created on
+	 * every task execution (new). Defaults to `TaskInstanceKind.Shared`
+	 */
+	panel: PanelKind;
 }
 
-export enum CommandType {
+export enum RuntimeType {
 	Shell = 1,
 	Process = 2
 }
 
-export namespace CommandType {
-	export function fromString(value: string): CommandType {
+export namespace RuntimeType {
+	export function fromString(value: string): RuntimeType {
 		switch (value.toLowerCase()) {
 			case 'shell':
-				return CommandType.Shell;
+				return RuntimeType.Shell;
 			case 'process':
-				return CommandType.Process;
+				return RuntimeType.Process;
 			default:
-				return CommandType.Process;
+				return RuntimeType.Process;
 		}
 	}
 }
@@ -116,7 +165,7 @@ export interface CommandConfiguration {
 	/**
 	 * The task type
 	 */
-	type: CommandType;
+	runtime: RuntimeType;
 
 	/**
 	 * The command to execute
@@ -145,9 +194,9 @@ export interface CommandConfiguration {
 	suppressTaskName?: boolean;
 
 	/**
-	 * Describes how the terminal is supposed to behave.
+	 * Describes how the task is presented in the UI.
 	 */
-	terminalBehavior: TerminalBehavior;
+	presentation: PresentationOptions;
 }
 
 export namespace TaskGroup {
@@ -155,63 +204,79 @@ export namespace TaskGroup {
 
 	export const Build: 'build' = 'build';
 
-	export const RebuildAll: 'rebuildAll' = 'rebuildAll';
+	export const Rebuild: 'rebuild' = 'rebuild';
 
 	export const Test: 'test' = 'test';
 
 	export function is(value: string): value is string {
-		return value === Clean || value === Build || value === RebuildAll || value === Test;
+		return value === Clean || value === Build || value === Rebuild || value === Test;
 	}
 }
 
-export type TaskGroup = 'clean' | 'build' | 'rebuildAll' | 'test';
+export type TaskGroup = 'clean' | 'build' | 'rebuild' | 'test';
 
-export enum TaskSourceKind {
-	Workspace = 1,
-	Extension = 2,
-	Generic = 3
+
+export enum TaskScope {
+	Global = 1,
+	Workspace = 2,
+	Folder = 3
 }
 
-export interface TaskSource {
-	kind: TaskSourceKind;
-	label: string;
-	detail?: string;
+export namespace TaskSourceKind {
+	export const Workspace: 'workspace' = 'workspace';
+	export const Extension: 'extension' = 'extension';
+	export const Composite: 'composite' = 'composite';
 }
 
-/**
- * A task description
- */
-export interface Task {
+export interface WorkspaceFolder {
+	uri: URI;
+}
 
-	/**
-	 * The task's internal id
-	 */
-	_id: string;
+export interface TaskSourceConfigElement {
+	workspaceFolder: WorkspaceFolder;
+	file: string;
+	index: number;
+	element: any;
+}
 
-	/**
-	 * The cached label.
-	 */
-	_label: string;
+export interface WorkspaceTaskSource {
+	readonly kind: 'workspace';
+	readonly label: string;
+	readonly config: TaskSourceConfigElement;
+	readonly customizes?: TaskIdentifier;
+}
 
-	/**
-	 * Indicated the source of the task (e.g tasks.json or extension)
-	 */
-	_source: TaskSource;
+export interface ExtensionTaskSource {
+	readonly kind: 'extension';
+	readonly label: string;
+	readonly extension: string;
+	readonly scope: TaskScope;
+	readonly workspaceFolder: WorkspaceFolder | undefined;
+}
+
+export interface CompositeTaskSource {
+	readonly kind: 'composite';
+	readonly label: string;
+}
+
+export type TaskSource = WorkspaceTaskSource | ExtensionTaskSource | CompositeTaskSource;
+
+export interface TaskIdentifier {
+	_key: string;
+	type: string;
+}
+
+export interface ConfigurationProperties {
 
 	/**
 	 * The task's name
 	 */
-	name: string;
+	name?: string;
 
 	/**
-	 * The task's identifier.
+	 * The task's name
 	 */
-	identifier: string;
-
-	/**
-	 * The id of the customized task
-	 */
-	customize?: string;
+	identifier?: string;
 
 	/**
 	 * the task's group;
@@ -219,9 +284,14 @@ export interface Task {
 	group?: string;
 
 	/**
-	 * The command configuration
+	 * Whether this task is a primary task in the task group.
 	 */
-	command: CommandConfiguration;
+	isDefaultGroupEntry?: boolean;
+
+	/**
+	 * The presentation options
+	 */
+	presentation?: PresentationOptions;
 
 	/**
 	 * Whether the task is a background task or not.
@@ -244,9 +314,152 @@ export interface Task {
 	problemMatchers?: (string | ProblemMatcher)[];
 }
 
+export interface CommonTask {
+
+	/**
+	 * The task's internal id
+	 */
+	_id: string;
+
+	/**
+	 * The cached label.
+	 */
+	_label: string;
+
+	type: string;
+}
+
+export interface CustomTask extends CommonTask, ConfigurationProperties {
+
+	type: 'custom';
+
+	/**
+	 * Indicated the source of the task (e.g tasks.json or extension)
+	 */
+	_source: WorkspaceTaskSource;
+
+	name: string;
+
+	identifier: string;
+
+	/**
+	 * The command configuration
+	 */
+	command: CommandConfiguration;
+}
+
+export namespace CustomTask {
+	export function is(value: any): value is CustomTask {
+		let candidate: CustomTask = value;
+		return candidate && candidate.type === 'custom';
+	}
+}
+
+export interface ConfiguringTask extends CommonTask, ConfigurationProperties {
+
+	/**
+	 * Indicated the source of the task (e.g tasks.json or extension)
+	 */
+	_source: WorkspaceTaskSource;
+
+	configures: TaskIdentifier;
+}
+
+export namespace ConfiguringTask {
+	export function is(value: any): value is ConfiguringTask {
+		let candidate: ConfiguringTask = value;
+		return candidate && candidate.configures && Types.isString(candidate.configures.type) && value.command === void 0;
+	}
+}
+
+export interface ContributedTask extends CommonTask, ConfigurationProperties {
+
+	/**
+	 * Indicated the source of the task (e.g tasks.json or extension)
+	 */
+	_source: ExtensionTaskSource;
+
+	defines: TaskIdentifier;
+
+	hasDefinedMatchers: boolean;
+
+	/**
+	 * The command configuration
+	 */
+	command: CommandConfiguration;
+}
+
+export namespace ContributedTask {
+	export function is(value: any): value is ContributedTask {
+		let candidate: ContributedTask = value;
+		return candidate && candidate.defines && Types.isString(candidate.defines.type) && candidate.command !== void 0;
+	}
+}
+
+export interface CompositeTask extends CommonTask, ConfigurationProperties {
+	/**
+	 * Indicated the source of the task (e.g tasks.json or extension)
+	 */
+	_source: CompositeTaskSource;
+
+	type: 'composite';
+
+	identifier: string;
+}
+
+export namespace CompositeTask {
+	export function is(value: any): value is CompositeTask {
+		let candidate = value as CompositeTask;
+		return candidate && candidate._source && candidate._source.kind === TaskSourceKind.Composite;
+	}
+}
+
+export type Task = CustomTask | ContributedTask | CompositeTask;
+
+export namespace Task {
+	export function getKey(task: Task): string {
+		if (CustomTask.is(task) || CompositeTask.is(task)) {
+			return task.identifier;
+		} else {
+			return task.defines._key;
+		}
+	}
+
+	export function getWorkspaceFolder(task: Task): WorkspaceFolder | undefined {
+		if (CustomTask.is(task)) {
+			return task._source.config.workspaceFolder;
+		} else if (ContributedTask.is(task)) {
+			return task._source.workspaceFolder;
+		} else {
+			return undefined;
+		}
+	}
+
+	export function getTelemetryKind(task: Task): string {
+		if (ContributedTask.is(task)) {
+			return 'extension';
+		} else if (CustomTask.is(task)) {
+			if (task._source.customizes) {
+				return 'workspace>extension';
+			} else {
+				return 'workspace';
+			}
+		} else if (CompositeTask.is(task)) {
+			return 'composite';
+		} else {
+			return 'unknown';
+		}
+	}
+}
+
+
 export enum ExecutionEngine {
 	Process = 1,
 	Terminal = 2
+}
+
+export namespace ExecutionEngine {
+	export const _default: ExecutionEngine = ExecutionEngine.Terminal;
 }
 
 export enum JsonSchemaVersion {
@@ -257,4 +470,10 @@ export enum JsonSchemaVersion {
 export interface TaskSet {
 	tasks: Task[];
 	extension?: IExtensionDescription;
+}
+
+export interface TaskDefinition {
+	taskType: string;
+	required: string[];
+	properties: IJSONSchemaMap;
 }

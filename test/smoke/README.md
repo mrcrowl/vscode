@@ -1,39 +1,61 @@
-# VS Code Smoke Testing
-The following command is used to run the tests: `npm test -- --latest "path/to/binary"`.
+# VS Code Automated Smoke Testing
 
-If you want to include 'Data Migration' area tests use  `npm test -- --latest path/to/binary --stable path/to/currentStable` respectively.
+## Framework
+* Smoke tests are written using the [Spectron](https://electron.atom.io/spectron/) and [Mocha](https://mochajs.org/) frameworks.
+* Spectron is used to control the lifecycle of VS Code and also to query the DOM elements of VS Code renderer window using the [WebriverIO](http://webdriver.io/) API that is wrapped in Spectron API.
+* Mocha is used to launch the smoke tests.
 
-# Architecture
-* `main.js` is used to prepare all smoke test dependencies (fetching key bindings and 'Express' repository, running `npm install` there).
-* `mocha-runner.js` launches Mocha programmatically. It is spawned in Node environment from main.js to ensure that it is possible to listen on `stderr`s (primary `process.stderr` is not readable otherwise). This is accomplished because WebDriverIO command deprecation warnings need to be redirected to a separate log. Those warnings are coming from WebDriverIO because ChromeDriver has not migrated from JsonWire to W3C WebDriver protocol.
-* `test.ts` contains the main smoke test suite calling the tests that are bundled in areas and defined in `./tests/`. It includes all tests separated into mocha `describe()` groups that represent each of the areas of [Smoke Test document](https://github.com/Microsoft/vscode/wiki/Smoke-Test).
+## Code Organization
+* All smoke test code is present under `/test/smoke/` folder. Code is organized into indvidual areas. Each area contains a facade to to access it functionality and a test file to test it. For e.g. `debug` area has `debug.ts` facade class that provides utility methods to access debug functionalities. It also has `debug.test.ts` that tests the debug functionalities.
 
-* `./areas/` folder contains a `.ts` file per each area of the document. E.g. `'Search'` area goes under `'search.ts'`. Every area file contains a list of methods with the name that represents the action that can be performed in the corresponding test. This reduces the amount of test suite code and means that if the UI changes, the fix need only be applied in one place. The name of the method reflects the action the tester would do if he would perform the test manually. See [Selenium Page Objects Wiki](https://github.com/SeleniumHQ/selenium/wiki/PageObjects) and [Selenium Bot Style Tests Wiki](https://github.com/SeleniumHQ/selenium/wiki/Bot-Style-Tests) for a good explanation of the implementation. Every smoke test area contains methods that are used in a bot-style approach in `main.ts`.
-* `./spectron/` wraps the Spectron, with WebDriverIO API wrapped in `client.ts` and instance of Spectron Application is wrapped in `application.ts`.
+* `application.ts` provides APIs to start and stop the VS Code application. It also provides access to various utility APIs like
+	* client
+	* webclient
+	* screenCapturer
+	* workbench
 
-# Adding new area
-To contribute a new smoke test area, add `${area}.ts` file under `./areas/`. All related tests to the area should go to the alike named file under `./tests/${area}.ts`. This has to follow the bot-style approach described in the links mentioned above. Methods should be calling WebDriverIO API through `SpectronClient` class. If there is no existing WebDriverIO method, add it to the class.
+* `client.ts` class wraps WebDriverIO APIs and provides enhanced APIs for accessing DOM elements. For e.g. it has methods like `waitForElement(selector, accept)` that will query the DOM with the given selector and waits until the element is found or time out after configured time (`5s`).
 
-# Adding new test
-To add new test, `./test/${area}.ts` should be updated. The same instruction-style principle needs to be followed with the called area method names that reflect manual tester's actions.
+* `screenCapturer.ts` allows you capture the screenshots. Capturing is done only if argument `--screenshots` is passed while launching smoke tests. When run out of sources, screenshots are captured under `screenshots` folder in the parent directory of vscode workspace.
+
+* `workbench.ts` provides utlities to access workbench functionality and also access to other functionality areas like `scm`, `debug`, `editor`. **Note**: All areas should be able to be accessible from workbench either directly or through area traversal.
+
+### Adding new area and tests
+To contribute a new smoke test area, add `${area}` folder under `./areas/`. All tests and facades related to this area should go under this folder. Newly added tests should be listed in `main.ts` as imports so that mocha can pick and run them.
+
+## Running "Out of Sources"
+```
+npm run smoketest
+```
+
+## Running Insiders
+```
+npm run smoketest -- --build "path/to/code-insiders"
+```
+
+## Running Stable
+```
+npm run smoketest -- --build "path/to/code"
+```
+
+To run 'Data Migration' tests, specify the path of the version to be migrated using `--stable` argument
+
+```
+npm run smoketest -- --build "path/to/code-insiders" --stable "path/to/code"
+```
+
+By default screenshots are not captured. To run tests with screenshots use the argument `--screenshots`
+
+```
+npm run smoketest -- --screenshots
+```
+
+To run a specific test suite use `-f ${suiteName}` argument
+
+```
+npm run smoketest -- -f Git
+```
 
 # Debugging
-1. Add the following configuration to launch.json, specifying binaries in `args`:
-```json
-{
-	"type": "node",
-	"request": "launch",
-	"name": "Launch Smoke Test",
-	"program": "${workspaceRoot}/test/smoke/src/main.js",
-	"cwd": "${workspaceRoot}/test/smoke",
-	"port": 9999,
-	"args": [
-		"-l",
-		"path/to/Code.exe"
-	],
-	"outFiles": [
-		"${cwd}/out/**/*.js"
-	]
-},
-```
-2. In main.js add `--debug-brk=9999` argument to the place where `src/mocha-runner.js` is spawned.
+
+Update

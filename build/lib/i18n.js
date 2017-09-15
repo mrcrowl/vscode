@@ -11,7 +11,7 @@ var File = require("vinyl");
 var Is = require("is");
 var xml2js = require("xml2js");
 var glob = require("glob");
-var http = require("http");
+var https = require("https");
 var util = require('gulp-util');
 var iconv = require('iconv-lite');
 function log(message) {
@@ -64,7 +64,7 @@ var ModuleJsonFormat;
     }
     ModuleJsonFormat.is = is;
 })(ModuleJsonFormat || (ModuleJsonFormat = {}));
-var Line = (function () {
+var Line = /** @class */ (function () {
     function Line(indent) {
         if (indent === void 0) { indent = 0; }
         this.indent = indent;
@@ -83,7 +83,7 @@ var Line = (function () {
     return Line;
 }());
 exports.Line = Line;
-var TextModel = (function () {
+var TextModel = /** @class */ (function () {
     function TextModel(contents) {
         this._lines = contents.split(/\r\n|\r|\n/);
     }
@@ -96,7 +96,7 @@ var TextModel = (function () {
     });
     return TextModel;
 }());
-var XLF = (function () {
+var XLF = /** @class */ (function () {
     function XLF(project) {
         this.project = project;
         this.buffer = [];
@@ -162,50 +162,50 @@ var XLF = (function () {
         line.append(content);
         this.buffer.push(line.toString());
     };
+    XLF.parse = function (xlfString) {
+        return new Promise(function (resolve, reject) {
+            var parser = new xml2js.Parser();
+            var files = [];
+            parser.parseString(xlfString, function (err, result) {
+                if (err) {
+                    reject("Failed to parse XLIFF string. " + err);
+                }
+                var fileNodes = result['xliff']['file'];
+                if (!fileNodes) {
+                    reject('XLIFF file does not contain "xliff" or "file" node(s) required for parsing.');
+                }
+                fileNodes.forEach(function (file) {
+                    var originalFilePath = file.$.original;
+                    if (!originalFilePath) {
+                        reject('XLIFF file node does not contain original attribute to determine the original location of the resource file.');
+                    }
+                    var language = file.$['target-language'].toLowerCase();
+                    if (!language) {
+                        reject('XLIFF file node does not contain target-language attribute to determine translated language.');
+                    }
+                    var messages = {};
+                    var transUnits = file.body[0]['trans-unit'];
+                    transUnits.forEach(function (unit) {
+                        var key = unit.$.id;
+                        if (!unit.target) {
+                            return; // No translation available
+                        }
+                        var val = unit.target.toString();
+                        if (key && val) {
+                            messages[key] = decodeEntities(val);
+                        }
+                        else {
+                            reject('XLIFF file does not contain full localization data. ID or target translation for one of the trans-unit nodes is not present.');
+                        }
+                    });
+                    files.push({ messages: messages, originalFilePath: originalFilePath, language: language });
+                });
+                resolve(files);
+            });
+        });
+    };
     return XLF;
 }());
-XLF.parse = function (xlfString) {
-    return new Promise(function (resolve, reject) {
-        var parser = new xml2js.Parser();
-        var files = [];
-        parser.parseString(xlfString, function (err, result) {
-            if (err) {
-                reject("Failed to parse XLIFF string. " + err);
-            }
-            var fileNodes = result['xliff']['file'];
-            if (!fileNodes) {
-                reject('XLIFF file does not contain "xliff" or "file" node(s) required for parsing.');
-            }
-            fileNodes.forEach(function (file) {
-                var originalFilePath = file.$.original;
-                if (!originalFilePath) {
-                    reject('XLIFF file node does not contain original attribute to determine the original location of the resource file.');
-                }
-                var language = file.$['target-language'].toLowerCase();
-                if (!language) {
-                    reject('XLIFF file node does not contain target-language attribute to determine translated language.');
-                }
-                var messages = {};
-                var transUnits = file.body[0]['trans-unit'];
-                transUnits.forEach(function (unit) {
-                    var key = unit.$.id;
-                    if (!unit.target) {
-                        return; // No translation available
-                    }
-                    var val = unit.target.toString();
-                    if (key && val) {
-                        messages[key] = decodeEntities(val);
-                    }
-                    else {
-                        reject('XLIFF file does not contain full localization data. ID or target translation for one of the trans-unit nodes is not present.');
-                    }
-                });
-                files.push({ messages: messages, originalFilePath: originalFilePath, language: language });
-            });
-            resolve(files);
-        });
-    });
-};
 exports.XLF = XLF;
 var iso639_3_to_2 = {
     'chs': 'zh-cn',
@@ -501,6 +501,7 @@ function prepareXlfFiles(projectName, extensionName) {
 }
 exports.prepareXlfFiles = prepareXlfFiles;
 var editorProject = 'vscode-editor', workbenchProject = 'vscode-workbench', extensionsProject = 'vscode-extensions', setupProject = 'vscode-setup';
+<<<<<<< HEAD
 /**
  * Ensure to update those arrays when new resources are pushed to Transifex.
  * Used because Transifex does not have API method to pull all project resources.
@@ -555,6 +556,8 @@ var workbenchResources = [
     { name: 'vs/workbench/services/themes', project: workbenchProject },
     { name: 'setup_messages', project: workbenchProject }
 ];
+=======
+>>>>>>> upstream/master
 function getResource(sourceFile) {
     var resource;
     if (/^vs\/platform/.test(sourceFile)) {
@@ -630,10 +633,11 @@ function importModuleOrPackageJson(file, json, projectName, stream, extensionNam
     }
     var extension = extensions[extensionName] ?
         extensions[extensionName] : extensions[extensionName] = { xlf: new XLF(projectName), processed: 0 };
-    if (ModuleJsonFormat.is(json)) {
-        extension.xlf.addFile(originalFilePath, json['keys'], json['messages']);
+    // .nls.json can come with empty array of keys and messages, check for it
+    if (ModuleJsonFormat.is(json) && json.keys.length !== 0) {
+        extension.xlf.addFile(originalFilePath, json.keys, json.messages);
     }
-    else {
+    else if (PackageJsonFormat.is(json) && Object.keys(json).length !== 0) {
         extension.xlf.addFile(originalFilePath, Object.keys(json), messages);
     }
     // Check if XLF is populated with file nodes to emit it
@@ -731,7 +735,7 @@ function tryGetResource(project, slug, apiHostname, credentials) {
             auth: credentials,
             method: 'GET'
         };
-        var request = http.request(options, function (response) {
+        var request = https.request(options, function (response) {
             if (response.statusCode === 404) {
                 resolve(false);
             }
@@ -766,7 +770,7 @@ function createResource(project, slug, xlfFile, apiHostname, credentials) {
             auth: credentials,
             method: 'POST'
         };
-        var request = http.request(options, function (res) {
+        var request = https.request(options, function (res) {
             if (res.statusCode === 201) {
                 log("Resource " + project + "/" + slug + " successfully created on Transifex.");
             }
@@ -798,7 +802,7 @@ function updateResource(project, slug, xlfFile, apiHostname, credentials) {
             auth: credentials,
             method: 'PUT'
         };
-        var request = http.request(options, function (res) {
+        var request = https.request(options, function (res) {
             if (res.statusCode === 200) {
                 res.setEncoding('utf8');
                 var responseBuffer_1 = '';
@@ -825,10 +829,12 @@ function updateResource(project, slug, xlfFile, apiHostname, credentials) {
 function obtainProjectResources(projectName) {
     var resources = [];
     if (projectName === editorProject) {
-        resources = editorResources;
+        var json = fs.readFileSync('./build/lib/i18n.resources.json', 'utf8');
+        resources = JSON.parse(json).editor;
     }
     else if (projectName === workbenchProject) {
-        resources = workbenchResources;
+        var json = fs.readFileSync('./build/lib/i18n.resources.json', 'utf8');
+        resources = JSON.parse(json).workbench;
     }
     else if (projectName === extensionsProject) {
         var extensionsToLocalize = glob.sync('./extensions/**/*.nls.json').map(function (extension) { return extension.split('/')[2]; });
@@ -888,7 +894,7 @@ function retrieveResource(language, resource, apiHostname, credentials) {
             auth: credentials,
             method: 'GET'
         };
-        var request = http.request(options, function (res) {
+        var request = https.request(options, function (res) {
             var xlfBuffer = [];
             res.on('data', function (chunk) { return xlfBuffer.push(chunk); });
             res.on('end', function () {
@@ -970,7 +976,9 @@ var encodings = {
     'esn': 'CP1252',
     'rus': 'CP1251',
     'ita': 'CP1252',
-    'ptb': 'CP1252'
+    'ptb': 'CP1252',
+    'hun': 'CP1250',
+    'trk': 'CP1254'
 };
 function createIslFile(base, originalFilePath, messages, language) {
     var content = [];

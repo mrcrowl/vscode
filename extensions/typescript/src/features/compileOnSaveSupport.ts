@@ -61,7 +61,7 @@ export default class TypeScriptCompileOnSaveSupport {
 		// see: https://code.visualstudio.com/docs/extensionAPI/vscode-api#workspace.onWillSaveTextDocument
 		const enabled = await Promise.race([
 			this.enabledCache.isEnabledForFile(filename),
-			new Promise(resolve => setTimeout(() => resolve(timeoutDefault), timeout))
+			new Promise<boolean>(resolve => setTimeout(() => resolve(timeoutDefault), timeout))
 		]);
 
 		return enabled;

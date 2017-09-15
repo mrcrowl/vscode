@@ -1,9 +1,8 @@
-[
-	{
-		"name": "browser-stdout",
-		"version": "1.3.0",
-		"isLicense": true,
-		"repositoryURL": "https://github.com/kumavis/browser-stdout",
-		"license": "ISC"
-	}
+// ATTENTION - THIS DIRECTORY CONTAINS THIRD PARTY OPEN SOURCE MATERIALS:
+[{
+	"name": "expand-abbreviation",
+	"version": "0.5.8",
+	"license": "MIT",
+	"repositoryURL": "https://github.com/emmetio/expand-abbreviation"
+}
 ]

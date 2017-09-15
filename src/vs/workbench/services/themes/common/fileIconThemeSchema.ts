@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 import nls = require('vs/nls');
 
-import { Registry } from 'vs/platform/platform';
+import { Registry } from 'vs/platform/registry/common/platform';
 import { Extensions as JSONExtensions, IJSONContributionRegistry } from 'vs/platform/jsonschemas/common/jsonContributionRegistry';
 import { IJSONSchema } from 'vs/base/common/jsonSchema';
 
@@ -167,6 +167,7 @@ const schema: IJSONSchema = {
 					},
 					fontColor: {
 						type: 'string',
+						format: 'color',
 						description: nls.localize('schema.fontColor', 'When using a glyph font: The color to use.')
 					},
 					fontSize: {

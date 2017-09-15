@@ -3,129 +3,160 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Application } from 'spectron';
+import { Application, SpectronClient as WebClient } from 'spectron';
 import { SpectronClient } from './client';
-import { Screenshot } from "../helpers/screenshot";
-var fs = require('fs');
-var path = require('path');
+import { ScreenCapturer } from '../helpers/screenshot';
+import { Workbench } from '../areas/workbench/workbench';
+import * as fs from 'fs';
+import * as cp from 'child_process';
+import * as path from 'path';
 
-export const LATEST_PATH = process.env.VSCODE_LATEST_PATH;
-export const STABLE_PATH = process.env.VSCODE_STABLE_PATH;
-export const WORKSPACE_PATH = process.env.SMOKETEST_REPO;
-export const USER_DIR = 'test_data/temp_user_dir';
-export const EXTENSIONS_DIR = 'test_data/temp_extensions_dir';
+export const LATEST_PATH = process.env.VSCODE_PATH as string;
+export const STABLE_PATH = process.env.VSCODE_STABLE_PATH || '';
+export const WORKSPACE_PATH = process.env.SMOKETEST_REPO as string;
+export const CODE_WORKSPACE_PATH = process.env.VSCODE_WORKSPACE_PATH as string;
+export const USER_DIR = process.env.VSCODE_USER_DIR as string;
+export const EXTENSIONS_DIR = process.env.VSCODE_EXTENSIONS_DIR as string;
+export const VSCODE_EDITION = process.env.VSCODE_EDITION as string;
+export const SCREENSHOTS_DIR = process.env.SCREENSHOTS_DIR as string;
+
+export enum VSCODE_BUILD {
+	DEV,
+	INSIDERS,
+	STABLE
+}
 
 /**
  * Wraps Spectron's Application instance with its used methods.
  */
 export class SpectronApplication {
-	public client: SpectronClient;
 
+	private _client: SpectronClient;
+	private _workbench: Workbench;
+	private _screenCapturer: ScreenCapturer;
 	private spectron: Application;
-	private readonly pollTrials = 5;
-	private readonly pollTimeout = 3; // in secs
 	private keybindings: any[];
-	private screenshot: Screenshot;
 
-	constructor(electronPath: string, testName: string, private testRetry: number, args?: string[], chromeDriverArgs?: string[]) {
-		if (!args) {
-			args = [];
+	constructor(private _electronPath: string = LATEST_PATH, private _workspace: string = WORKSPACE_PATH, private _userDir: string = USER_DIR) {
+	}
+
+	public get build(): VSCODE_BUILD {
+		switch (VSCODE_EDITION) {
+			case 'dev':
+				return VSCODE_BUILD.DEV;
+			case 'insiders':
+				return VSCODE_BUILD.INSIDERS;
 		}
-
-		this.spectron = new Application({
-			path: electronPath,
-			args: args.concat(['--skip-getting-started']), // prevent 'Getting Started' web page from opening on clean user-data-dir
-			chromeDriverArgs: chromeDriverArgs
-		});
-		this.screenshot = new Screenshot(this, testName);
-		this.client = new SpectronClient(this.spectron, this.screenshot);
-		this.testRetry += 1; // avoid multiplication by 0 for wait times
-		this.retrieveKeybindings();
+		return VSCODE_BUILD.STABLE;
 	}
 
 	public get app(): Application {
 		return this.spectron;
 	}
 
-	public async start(): Promise<any> {
-		try {
-			await this.spectron.start();
-			await this.focusOnWindow(1); // focuses on main renderer window
-			return this.checkWindowReady();
-		} catch (err) {
-			throw err;
-		}
+	public get client(): SpectronClient {
+		return this._client;
+	}
+
+	public get webclient(): WebClient {
+		return this.spectron.client;
+	}
+
+	public get screenCapturer(): ScreenCapturer {
+		return this._screenCapturer;
+	}
+
+	public get workbench(): Workbench {
+		return this._workbench;
+	}
+
+	public async start(testSuiteName: string, codeArgs: string[] = []): Promise<any> {
+		await this.retrieveKeybindings();
+		cp.execSync('git checkout .', { cwd: WORKSPACE_PATH });
+		await this.startApplication(testSuiteName, codeArgs);
+		await this.checkWindowReady();
+		await this.waitForWelcome();
+		await this.screenCapturer.capture('Application started');
+	}
+
+	public async reload(): Promise<any> {
+		await this.workbench.quickopen.runCommand('Reload Window');
+		// TODO @sandy: Find a proper condition to wait for reload
+		await this.wait(.5);
+		await this.checkWindowReady();
 	}
 
 	public async stop(): Promise<any> {
 		if (this.spectron && this.spectron.isRunning()) {
+			await this.screenCapturer.capture('Stopping application');
 			return await this.spectron.stop();
 		}
 	}
 
-	public waitFor(func: (...args: any[]) => any, args: any): Promise<any> {
-		return this.callClientAPI(func, args, 0);
+	public wait(seconds: number = 1): Promise<any> {
+		return new Promise(resolve => setTimeout(resolve, seconds * 1000));
 	}
 
-	public wait(): Promise<any> {
-		return new Promise(resolve => setTimeout(resolve, this.testRetry * this.pollTimeout * 1000));
-	}
+	private async startApplication(testSuiteName: string, codeArgs: string[] = []): Promise<any> {
 
-	public focusOnWindow(index: number): Promise<any> {
-		return this.client.windowByIndex(index);
-	}
+		let args: string[] = [];
+		let chromeDriverArgs: string[] = [];
 
-	private checkWindowReady(): Promise<any> {
-		return this.waitFor(this.spectron.client.getHTML, '[id="workbench.main.container"]');
-	}
-
-	private retrieveKeybindings() {
-		fs.readFile(path.join(process.cwd(), `test_data/keybindings.json`), 'utf8', (err, data) => {
-			if (err) {
-				throw err;
-			}
-			try {
-				this.keybindings = JSON.parse(data);
-			} catch (e) {
-				throw new Error(`Error parsing keybindings JSON: ${e}`);
-			}
-		});
-	}
-
-	private callClientAPI(func: (...args: any[]) => Promise<any>, args: any, trial: number): Promise<any> {
-		if (trial > this.pollTrials) {
-			return Promise.reject(`Could not retrieve the element in ${this.testRetry * this.pollTrials * this.pollTimeout} seconds.`);
+		if (process.env.VSCODE_REPOSITORY) {
+			args.push(process.env.VSCODE_REPOSITORY as string);
 		}
 
-		return new Promise(async (res, rej) => {
-			let resolved = false, capture = false;
+		args.push(this._workspace);
+		// Prevent 'Getting Started' web page from opening on clean user-data-dir
+		args.push('--skip-getting-started');
+		// Ensure that running over custom extensions directory, rather than picking up the one that was used by a tester previously
+		args.push(`--extensions-dir=${EXTENSIONS_DIR}`);
 
-			const tryCall = async (resolve: any, reject: any): Promise<any> => {
-				await this.wait();
+		args.push(...codeArgs);
+
+		chromeDriverArgs.push(`--user-data-dir=${path.join(this._userDir, new Date().getTime().toString())}`);
+
+		this.spectron = new Application({
+			path: this._electronPath,
+			args,
+			chromeDriverArgs,
+			startTimeout: 10000,
+			requireName: 'nodeRequire'
+		});
+		await this.spectron.start();
+
+		this._screenCapturer = new ScreenCapturer(this.spectron, testSuiteName);
+		this._client = new SpectronClient(this.spectron, this);
+		this._workbench = new Workbench(this);
+	}
+
+	private async checkWindowReady(): Promise<any> {
+		await this.webclient.waitUntilWindowLoaded();
+		// Spectron opens multiple terminals in Windows platform
+		// Workaround to focus the right window - https://github.com/electron/spectron/issues/60
+		await this.client.windowByIndex(1);
+		await this.app.browserWindow.focus();
+		await this.client.waitForHTML('[id="workbench.main.container"]');
+	}
+
+	private async waitForWelcome(): Promise<any> {
+		await this.client.waitForElement('.explorer-folders-view');
+		await this.client.waitForElement(`.editor-container[id="workbench.editor.walkThroughPart"] .welcomePage`);
+	}
+
+	private retrieveKeybindings(): Promise<void> {
+		return new Promise((c, e) => {
+			fs.readFile(process.env.VSCODE_KEYBINDINGS_PATH as string, 'utf8', (err, data) => {
+				if (err) {
+					throw err;
+				}
 				try {
-					const result = await this.callClientAPI(func, args, ++trial);
-					res(result);
-				} catch (error) {
-					rej(error);
+					this.keybindings = JSON.parse(data);
+					c();
+				} catch (e) {
+					throw new Error(`Error parsing keybindings JSON: ${e}`);
 				}
-			}
-
-			try {
-				const result = await func.call(this.client, args, capture);
-				if (!resolved && result === '') {
-					resolved = true;
-					await tryCall(res, rej);
-				} else if (!resolved) {
-					resolved = true;
-					await this.screenshot.capture();
-					res(result);
-				}
-			} catch (e) {
-				if (!resolved) {
-					resolved = true;
-					await tryCall(res, rej);
-				}
-			}
+			});
 		});
 	}
 
@@ -135,6 +166,10 @@ export class SpectronApplication {
 	 */
 	public command(command: string, capture?: boolean): Promise<any> {
 		const binding = this.keybindings.find(x => x['command'] === command);
+		if (!binding) {
+			return this.workbench.quickopen.runCommand(command);
+		}
+
 		const keys: string = binding.key;
 		let keysToPress: string[] = [];
 

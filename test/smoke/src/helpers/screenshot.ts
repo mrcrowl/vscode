@@ -3,46 +3,37 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { SpectronApplication } from "../spectron/application";
-var fs = require('fs');
+import * as path from 'path';
+import * as fs from 'fs';
+import * as mkdirp from 'mkdirp';
+import { Application } from 'spectron';
+import { SCREENSHOTS_DIR } from '../spectron/application';
 
-const __testTime = new Date().toISOString();
+function sanitize(name: string): string {
+	return name.replace(/[&*:\/]/g, '');
+}
 
-export class Screenshot {
-	private index: number = 0;
-	private testPath: string;
+export class ScreenCapturer {
 
-	constructor(private spectron: SpectronApplication, testName: string) {
-		const testTime = this.sanitizeFolderName(__testTime);
-		testName = this.sanitizeFolderName(testName);
+	private static counter = 0;
+	testName: string = 'default';
 
-		this.testPath = `test_data/screenshots/${testTime}/${testName}`;
-		this.createFolder(this.testPath);
-	}
+	constructor(private application: Application, private suiteName: string) { }
 
-	public capture(): Promise<any> {
-		return new Promise(async (res, rej) => {
-			const image: Electron.NativeImage = await this.spectron.app.browserWindow.capturePage();
-			fs.writeFile(`${this.testPath}/${this.index}.png`, image, (err) => {
-				if (err) {
-					rej(err);
-				}
-			});
-			this.index++;
-			res();
-		});
-	}
+	async capture(name: string): Promise<void> {
+		if (!SCREENSHOTS_DIR) {
+			return;
+		}
 
-	private createFolder(name: string) {
-		name.split('/').forEach((folderName, i, fullPath) => {
-			const folder = fullPath.slice(0, i + 1).join('/');
-			if (!fs.existsSync(folder)) {
-				fs.mkdirSync(folder);
-			}
-		});
-	}
+		const screenshotPath = path.join(
+			SCREENSHOTS_DIR,
+			sanitize(this.suiteName),
+			sanitize(this.testName),
+			`${ScreenCapturer.counter++}-${sanitize(name)}.png`
+		);
 
-	private sanitizeFolderName(name: string): string {
-		return name.replace(/[&*:\/]/g, '');
+		const image = await this.application.browserWindow.capturePage();
+		await new Promise((c, e) => mkdirp(path.dirname(screenshotPath), err => err ? e(err) : c()));
+		await new Promise((c, e) => fs.writeFile(screenshotPath, image, err => err ? e(err) : c()));
 	}
 }

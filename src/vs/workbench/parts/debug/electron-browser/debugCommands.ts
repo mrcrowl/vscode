@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as nls from 'vs/nls';
+import uri from 'vs/base/common/uri';
 import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';
 import { TPromise } from 'vs/base/common/winjs.base';
 import severity from 'vs/base/common/severity';
@@ -14,7 +15,7 @@ import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation
 import { KeybindingsRegistry } from 'vs/platform/keybinding/common/keybindingsRegistry';
 import { IListService } from 'vs/platform/list/browser/listService';
 import { IMessageService } from 'vs/platform/message/common/message';
-import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
+import { IWorkspaceContextService, WorkbenchState } from 'vs/platform/workspace/common/workspace';
 import { IDebugService, IConfig, IEnablement, CONTEXT_NOT_IN_DEBUG_MODE, CONTEXT_IN_DEBUG_MODE, CONTEXT_BREAKPOINTS_FOCUSED, CONTEXT_WATCH_EXPRESSIONS_FOCUSED, CONTEXT_VARIABLES_FOCUSED, EDITOR_CONTRIBUTION_ID, IDebugEditorContribution } from 'vs/workbench/parts/debug/common/debug';
 import { Expression, Variable, Breakpoint, FunctionBreakpoint } from 'vs/workbench/parts/debug/common/debugModel';
 import { IExtensionsViewlet, VIEWLET_ID as EXTENSIONS_VIEWLET_ID } from 'vs/workbench/parts/extensions/common/extensions';
@@ -25,17 +26,21 @@ export function registerCommands(): void {
 	KeybindingsRegistry.registerCommandAndKeybindingRule({
 		id: '_workbench.startDebug',
 		weight: KeybindingsRegistry.WEIGHT.workbenchContrib(),
-		handler(accessor: ServicesAccessor, configurationOrName: IConfig | string) {
+		handler(accessor: ServicesAccessor, configurationOrName: IConfig | string, folderUri?: uri) {
 			const debugService = accessor.get(IDebugService);
 			if (!configurationOrName) {
-				configurationOrName = debugService.getViewModel().selectedConfigurationName;
+				configurationOrName = debugService.getConfigurationManager().selectedName;
+			}
+
+			if (!folderUri) {
+				const selectedLaunch = debugService.getConfigurationManager().selectedLaunch;
+				folderUri = selectedLaunch ? selectedLaunch.workspaceUri : undefined;
 			}
 
 			if (typeof configurationOrName === 'string') {
-				debugService.getViewModel().setSelectedConfigurationName(configurationOrName);
-				return debugService.startDebugging();
+				debugService.startDebugging(folderUri, configurationOrName);
 			} else {
-				return debugService.createProcess(configurationOrName);
+				debugService.createProcess(folderUri, configurationOrName);
 			}
 		},
 		when: CONTEXT_NOT_IN_DEBUG_MODE,
@@ -197,14 +202,15 @@ export function registerCommands(): void {
 		weight: KeybindingsRegistry.WEIGHT.workbenchContrib(),
 		when: undefined,
 		primary: undefined,
-		handler: (accessor) => {
+		handler: (accessor, workspaceUri: string) => {
 			const manager = accessor.get(IDebugService).getConfigurationManager();
-			if (!accessor.get(IWorkspaceContextService).getWorkspace()) {
+			if (accessor.get(IWorkspaceContextService).getWorkbenchState() === WorkbenchState.EMPTY) {
 				accessor.get(IMessageService).show(severity.Info, nls.localize('noFolderDebugConfig', "Please first open a folder in order to do advanced debug configuration."));
 				return TPromise.as(null);
 			}
+			const launch = manager.getLaunches().filter(l => l.workspaceUri.toString() === workspaceUri).pop() || manager.selectedLaunch;
 
-			return manager.openConfigFile(false).done(editor => {
+			return launch.openConfigFile(false).done(editor => {
 				if (editor) {
 					const codeEditor = <ICommonCodeEditor>editor.getControl();
 					if (codeEditor) {

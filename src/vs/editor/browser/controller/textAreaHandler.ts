@@ -18,7 +18,7 @@ import { HorizontalRange, RenderingContext, RestrictedRenderingContext } from 'v
 import * as viewEvents from 'vs/editor/common/view/viewEvents';
 import { FastDomNode, createFastDomNode } from 'vs/base/browser/fastDomNode';
 import { ViewController } from 'vs/editor/browser/view/viewController';
-import { EndOfLinePreference } from 'vs/editor/common/editorCommon';
+import { EndOfLinePreference, ScrollType } from 'vs/editor/common/editorCommon';
 import { IKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { PartFingerprints, PartFingerprint, ViewPart } from 'vs/editor/browser/view/viewPart';
 import { Margin } from 'vs/editor/browser/viewParts/margin/margin';
@@ -108,6 +108,7 @@ export class TextAreaHandler extends ViewPart {
 		this.textArea.setAttribute('wrap', 'off');
 		this.textArea.setAttribute('autocorrect', 'off');
 		this.textArea.setAttribute('autocapitalize', 'off');
+		this.textArea.setAttribute('autocomplete', 'off');
 		this.textArea.setAttribute('spellcheck', 'false');
 		this.textArea.setAttribute('aria-label', conf.viewInfo.ariaLabel);
 		this.textArea.setAttribute('role', 'textbox');
@@ -167,6 +168,10 @@ export class TextAreaHandler extends ViewPart {
 				}
 
 				return PagedScreenReaderStrategy.fromEditorSelection(currentState, simpleModel, this._selections[0]);
+			},
+
+			deduceModelPosition: (viewAnchorPosition: Position, deltaOffset: number, lineFeedCnt: number): Position => {
+				return this._context.model.deduceModelPositionRelativeToViewPosition(viewAnchorPosition, deltaOffset, lineFeedCnt);
 			}
 		};
 
@@ -200,6 +205,10 @@ export class TextAreaHandler extends ViewPart {
 			}
 		}));
 
+		this._register(this._textAreaInput.onSelectionChangeRequest((modelSelection: Selection) => {
+			this._viewController.setSelection('keyboard', modelSelection);
+		}));
+
 		this._register(this._textAreaInput.onCompositionStart(() => {
 			const lineNumber = this._selections[0].startLineNumber;
 			const column = this._selections[0].startColumn;
@@ -207,7 +216,8 @@ export class TextAreaHandler extends ViewPart {
 			this._context.privateViewEventBus.emit(new viewEvents.ViewRevealRangeRequestEvent(
 				new Range(lineNumber, column, lineNumber, column),
 				viewEvents.VerticalRevealType.Simple,
-				true
+				true,
+				ScrollType.Immediate
 			));
 
 			// Find range pixel position
@@ -419,25 +429,6 @@ export class TextAreaHandler extends ViewPart {
 			Configuration.applyFontInfo(ta, this._fontInfo);
 		} else {
 			ta.setFontSize(1);
-			// Chrome does not generate input events in empty textareas that end
-			// up having a line height smaller than 1 screen pixel.
-
-			// The problem is that I could not find any formula to explain how Chromium converts css px to screen px in the DOM.
-			// Observed values on a retina screen (by taking screenshots):
-			// |--------|-----------|------------|------------|-----------|
-			// | css px | zoomLevel | zoomFactor | pixelRatio | screen px |
-			// |--------|-----------|------------|------------|-----------|
-			// |   18   |    -8     |   0.2325   |   0.5000   |      8    |
-			// |   18   |    -7     |   0.2790   |   0.5581   |     10    |
-			// |   18   |    -6     |   0.3348   |   0.6697   |     12    |
-			// |   18   |    -5     |   0.4018   |   0.8037   |     14    |
-			// |   18   |    -4     |   0.4822   |   0.9645   |     18    |
-			// |   18   |    -3     |   0.5787   |   1.1574   |     20    |
-			// |   18   |    -2     |   0.6944   |   1.3888   |     26    |
-			// |   18   |    -1     |   0.8333   |   1.6666   |     30    |
-			// |   18   |     0     |   1.0000   |   2.0000   |     36    |
-			// |--------|-----------|------------|------------|-----------|
-
 			ta.setLineHeight(this._fontInfo.lineHeight);
 		}
 

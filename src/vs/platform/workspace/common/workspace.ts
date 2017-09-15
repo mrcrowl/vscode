@@ -6,19 +6,22 @@
 
 import URI from 'vs/base/common/uri';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
-import paths = require('vs/base/common/paths');
-import { isEqualOrParent } from 'vs/platform/files/common/files';
+import { TrieMap } from 'vs/base/common/map';
+import Event from 'vs/base/common/event';
 import { isLinux } from 'vs/base/common/platform';
+import { distinct } from 'vs/base/common/arrays';
+import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier } from 'vs/platform/workspaces/common/workspaces';
 
 export const IWorkspaceContextService = createDecorator<IWorkspaceContextService>('contextService');
 
+export enum WorkbenchState {
+	EMPTY = 1,
+	FOLDER,
+	WORKSPACE
+}
+
 export interface IWorkspaceContextService {
 	_serviceBrand: any;
-
-	/**
-	 * Returns iff the application was opened with a workspace or not.
-	 */
-	hasWorkspace(): boolean;
 
 	/**
 	 * Provides access to the workspace object the platform is running with. This may be null if the workbench was opened
@@ -27,16 +30,39 @@ export interface IWorkspaceContextService {
 	getWorkspace(): IWorkspace;
 
 	/**
-	 * Returns iff the provided resource is inside the workspace or not.
+	 * Return the state of the workbench.
+	 *
+	 * WorkbenchState.EMPTY - if the workbench was opened with empty window or file
+	 * WorkbenchState.FOLDER - if the workbench was opened with a folder
+	 * WorkbenchState.WORKSPACE - if the workbench was opened with a workspace
 	 */
-	isInsideWorkspace(resource: URI): boolean;
+	getWorkbenchState(): WorkbenchState;
 
 	/**
-	 * Given a resource inside the workspace, returns its relative path from the workspace root
-	 * without leading or trailing slashes. Returns null if the file is not inside an opened
-	 * workspace.
+	 * An event which fires on workspace name changes.
 	 */
-	toWorkspaceRelativePath: (resource: URI, toOSPath?: boolean) => string;
+	onDidChangeWorkspaceName: Event<void>;
+
+	/**
+	 * An event which fires on workspace folders change.
+	 */
+	onDidChangeWorkspaceFolders: Event<void>;
+
+	/**
+	 * Returns the folder for the given resource from the workspace.
+	 * Can be null if there is no workspace or the resource is not inside the workspace.
+	 */
+	getWorkspaceFolder(resource: URI): URI;
+
+	/**
+	 * Return `true` if the current workspace has the given identifier otherwise `false`.
+	 */
+	isCurrentWorkspace(workspaceIdentifier: ISingleFolderWorkspaceIdentifier | IWorkspaceIdentifier): boolean;
+
+	/**
+	 * Returns if the provided resource is inside the workspace or not.
+	 */
+	isInsideWorkspace(resource: URI): boolean;
 
 	/**
 	 * Given a workspace relative path, returns the resource with the absolute path.
@@ -47,63 +73,86 @@ export interface IWorkspaceContextService {
 export interface IWorkspace {
 
 	/**
-	 * the full uri of the workspace. this is a file:// URL to the location
-	 * of the workspace on disk.
+	 * the unique identifier of the workspace.
 	 */
-	resource: URI;
+	readonly id: string;
 
 	/**
-	 * the unique identifier of the workspace. if the workspace is deleted and recreated
-	 * the identifier also changes. this makes the uid more unique compared to the id which
-	 * is just derived from the workspace name.
+	 * the name of the workspace.
 	 */
-	uid?: number;
+	readonly name: string;
 
 	/**
-	 * the name of the workspace
+	 * Folders in the workspace.
 	 */
-	name?: string;
+	readonly folders: URI[];
+
+	/**
+	 * the location of the workspace configuration
+	 */
+	readonly configuration?: URI;
 }
 
-export class WorkspaceContextService implements IWorkspaceContextService {
+export class Workspace implements IWorkspace {
 
-	public _serviceBrand: any;
+	private _foldersMap: TrieMap<URI> = new TrieMap<URI>();
+	private _folders: URI[];
 
-	private workspace: IWorkspace;
-
-	constructor(workspace: IWorkspace) {
-		this.workspace = workspace;
+	constructor(
+		public readonly id: string,
+		private _name: string,
+		folders: URI[],
+		private _configuration: URI = null,
+		public readonly ctime?: number
+	) {
+		this.folders = folders;
 	}
 
-	public getWorkspace(): IWorkspace {
-		return this.workspace;
+	private ensureUnique(folders: URI[]): URI[] {
+		return distinct(folders, folder => isLinux ? folder.fsPath : folder.fsPath.toLowerCase());
 	}
 
-	public hasWorkspace(): boolean {
-		return !!this.workspace;
+	public get folders(): URI[] {
+		return this._folders;
 	}
 
-	public isInsideWorkspace(resource: URI): boolean {
-		if (resource && this.workspace) {
-			return isEqualOrParent(resource.fsPath, this.workspace.resource.fsPath, !isLinux /* ignorecase */);
+	public set folders(folders: URI[]) {
+		this._folders = this.ensureUnique(folders);
+		this.updateFoldersMap();
+	}
+
+	public get name(): string {
+		return this._name;
+	}
+
+	public set name(name: string) {
+		this._name = name;
+	}
+
+	public get configuration(): URI {
+		return this._configuration;
+	}
+
+	public set configuration(configuration: URI) {
+		this._configuration = configuration;
+	}
+
+	public getFolder(resource: URI): URI {
+		if (!resource) {
+			return null;
 		}
 
-		return false;
+		return this._foldersMap.findSubstr(resource.fsPath);
 	}
 
-	public toWorkspaceRelativePath(resource: URI, toOSPath?: boolean): string {
-		if (this.isInsideWorkspace(resource)) {
-			return paths.normalize(paths.relative(this.workspace.resource.fsPath, resource.fsPath), toOSPath);
+	private updateFoldersMap(): void {
+		this._foldersMap = new TrieMap<URI>();
+		for (const folder of this.folders) {
+			this._foldersMap.insert(folder.fsPath, folder);
 		}
-
-		return null;
 	}
 
-	public toResource(workspaceRelativePath: string): URI {
-		if (typeof workspaceRelativePath === 'string' && this.workspace) {
-			return URI.file(paths.join(this.workspace.resource.fsPath, workspaceRelativePath));
-		}
-
-		return null;
+	public toJSON(): IWorkspace {
+		return { id: this.id, folders: this.folders, name: this.name };
 	}
 }
