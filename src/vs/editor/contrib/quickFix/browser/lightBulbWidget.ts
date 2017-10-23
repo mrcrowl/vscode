@@ -35,6 +35,8 @@ export class LightBulbWidget implements IDisposable, IContentWidget {
 		this._editor = editor;
 		this._editor.addContentWidget(this);
 
+		this._disposables.push(this._editor.onDidChangeModel(_ => this._futureFixes.cancel()));
+		this._disposables.push(this._editor.onDidChangeModelLanguage(_ => this._futureFixes.cancel()));
 		this._disposables.push(dom.addStandardDisposableListener(this._domNode, 'click', e => {
 			// a bit of extra work to make sure the menu
 			// doesn't cover the line-text
@@ -65,6 +67,12 @@ export class LightBulbWidget implements IDisposable, IContentWidget {
 				monitor.dispose();
 				dom.removeClass(this._domNode, 'hidden');
 			});
+		}));
+		this._disposables.push(this._editor.onDidChangeConfiguration(e => {
+			// hide when told to do so
+			if (e.contribInfo && !this._editor.getConfiguration().contribInfo.lightbulbEnabled) {
+				this.hide();
+			}
 		}));
 	}
 
@@ -124,11 +132,14 @@ export class LightBulbWidget implements IDisposable, IContentWidget {
 	}
 
 	private _show(): void {
-		const { fontInfo } = this._editor.getConfiguration();
+		const config = this._editor.getConfiguration();
+		if (!config.contribInfo.lightbulbEnabled) {
+			return;
+		}
 		const { lineNumber } = this._model.position;
 		const model = this._editor.getModel();
 		const indent = model.getIndentLevel(lineNumber);
-		const lineHasSpace = fontInfo.spaceWidth * indent > 22;
+		const lineHasSpace = config.fontInfo.spaceWidth * indent > 22;
 
 		let effectiveLineNumber = lineNumber;
 		if (!lineHasSpace) {

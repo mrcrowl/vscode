@@ -25,7 +25,7 @@ import { CharacterSet } from 'vs/editor/common/core/characterClassifier';
 import { IConfigurationChangedEvent } from 'vs/editor/common/config/editorOptions';
 import { ICursorSelectionChangedEvent } from 'vs/editor/common/controller/cursorEvents';
 import { registerThemingParticipant, HIGH_CONTRAST } from 'vs/platform/theme/common/themeService';
-import { editorHoverBackground, editorHoverBorder, textLinkForeground } from 'vs/platform/theme/common/colorRegistry';
+import { editorHoverBackground, editorHoverBorder, textLinkForeground, textCodeBlockBackground } from 'vs/platform/theme/common/colorRegistry';
 import { IOpenerService } from 'vs/platform/opener/common/opener';
 import { IModeService } from 'vs/editor/common/services/modeService';
 import { MarkdownRenderer } from 'vs/editor/contrib/markdown/browser/markdownRenderer';
@@ -217,9 +217,6 @@ export class ParameterHintsWidget implements IContentWidget, IDisposable {
 
 		this.element = $('.editor-widget.parameter-hints-widget');
 		const wrapper = dom.append(this.element, $('.wrapper'));
-
-		const onClick = stop(domEvent(this.element, 'click'));
-		onClick(this.next, this, this.disposables);
 
 		const buttons = dom.append(wrapper, $('.buttons'));
 		const previous = dom.append(buttons, $('.button.previous'));
@@ -513,5 +510,10 @@ registerThemingParticipant((theme, collector) => {
 	const link = theme.getColor(textLinkForeground);
 	if (link) {
 		collector.addRule(`.monaco-editor .parameter-hints-widget a { color: ${link}; }`);
+	}
+
+	let codeBackground = theme.getColor(textCodeBlockBackground);
+	if (codeBackground) {
+		collector.addRule(`.monaco-editor .parameter-hints-widget code { background-color: ${codeBackground}; }`);
 	}
 });

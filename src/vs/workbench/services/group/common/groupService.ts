@@ -5,9 +5,9 @@
 
 'use strict';
 
-import { createDecorator, ServiceIdentifier } from 'vs/platform/instantiation/common/instantiation';
+import { createDecorator, ServiceIdentifier, ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
 import { Position, IEditorInput } from 'vs/platform/editor/common/editor';
-import { IEditorStacksModel, IEditorGroup } from 'vs/workbench/common/editor';
+import { IEditorStacksModel, IEditorGroup, IEditorOpeningEvent } from 'vs/workbench/common/editor';
 import Event from 'vs/base/common/event';
 
 export enum GroupArrangement {
@@ -44,6 +44,11 @@ export interface IEditorGroupService {
 	 * Emitted when editors or inputs change. Examples: opening, closing of editors. Active editor change.
 	 */
 	onEditorsChanged: Event<void>;
+
+	/**
+	 * Emitted when an editor is opening. Allows to prevent/replace the opening via the event method.
+	 */
+	onEditorOpening: Event<IEditorOpeningEvent>;
 
 	/**
 	 * Emitted when opening an editor fails.
@@ -132,4 +137,9 @@ export interface IEditorGroupService {
 	 * Returns tab options.
 	 */
 	getTabOptions(): IEditorTabOptions;
+
+	/**
+	 * Invoke a function in the context of the active editor.
+	 */
+	invokeWithinEditorContext<T>(fn: (accessor: ServicesAccessor) => T): T;
 }

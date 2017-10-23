@@ -19,11 +19,13 @@ import { ITerminalService, ITerminalFont, TERMINAL_PANEL_ID } from 'vs/workbench
 import { IThemeService, ITheme } from 'vs/platform/theme/common/themeService';
 import { TerminalFindWidget } from './terminalFindWidget';
 import { editorHoverBackground, editorHoverBorder, editorForeground } from 'vs/platform/theme/common/colorRegistry';
-import { KillTerminalAction, CreateNewTerminalAction, SwitchTerminalInstanceAction, SwitchTerminalInstanceActionItem, CopyTerminalSelectionAction, TerminalPasteAction, ClearTerminalAction, SelectAllTerminalAction } from 'vs/workbench/parts/terminal/electron-browser/terminalActions';
+import { KillTerminalAction, SwitchTerminalInstanceAction, SwitchTerminalInstanceActionItem, CopyTerminalSelectionAction, TerminalPasteAction, ClearTerminalAction, SelectAllTerminalAction, CreateNewTerminalAction } from 'vs/workbench/parts/terminal/electron-browser/terminalActions';
 import { Panel } from 'vs/workbench/browser/panel';
 import { StandardMouseEvent } from 'vs/base/browser/mouseEvent';
 import { TPromise } from 'vs/base/common/winjs.base';
 import URI from 'vs/base/common/uri';
+import { PANEL_BACKGROUND } from 'vs/workbench/common/theme';
+import { TERMINAL_BACKGROUND_COLOR } from 'vs/workbench/parts/terminal/electron-browser/terminalColorRegistry';
 
 export class TerminalPanel extends Panel {
 
@@ -72,7 +74,7 @@ export class TerminalPanel extends Panel {
 		this._terminalService.setContainers(this.getContainer().getHTMLElement(), this._terminalContainer);
 
 		this._register(this.themeService.onThemeChange(theme => this._updateTheme(theme)));
-		this._register(this._configurationService.onDidUpdateConfiguration(() => this._updateFont()));
+		this._register(this._configurationService.onDidChangeConfiguration(() => this._updateFont()));
 		this._updateFont();
 		this._updateTheme();
 
@@ -127,7 +129,7 @@ export class TerminalPanel extends Panel {
 		if (!this._contextMenuActions) {
 			this._copyContextMenuAction = this._instantiationService.createInstance(CopyTerminalSelectionAction, CopyTerminalSelectionAction.ID, nls.localize('copy', "Copy"));
 			this._contextMenuActions = [
-				this._instantiationService.createInstance(CreateNewTerminalAction, CreateNewTerminalAction.ID, nls.localize('createNewTerminal', "New Terminal")),
+				this._instantiationService.createInstance(CreateNewTerminalAction, CreateNewTerminalAction.ID, CreateNewTerminalAction.PANEL_LABEL),
 				new Separator(),
 				this._copyContextMenuAction,
 				this._instantiationService.createInstance(TerminalPasteAction, TerminalPasteAction.ID, nls.localize('paste', "Paste")),
@@ -272,11 +274,9 @@ export class TerminalPanel extends Panel {
 
 		let css = '';
 
-		// TODO: Reinstate, see #28397
-		// const selectionColor = theme.getColor(TERMINAL_SELECTION_BACKGROUND_COLOR);
-		// if (selectionColor) {
-		// 	css += `.monaco-workbench .panel.integrated-terminal .xterm .xterm-selection div { background-color: ${selectionColor}; }`;
-		// }
+		const backgroundColor = theme.getColor(TERMINAL_BACKGROUND_COLOR) || theme.getColor(PANEL_BACKGROUND);
+		this._terminalContainer.style.backgroundColor = backgroundColor ? backgroundColor.toString() : '';
+
 		// Borrow the editor's hover background for now
 		let hoverBackground = theme.getColor(editorHoverBackground);
 		if (hoverBackground) {
@@ -302,8 +302,6 @@ export class TerminalPanel extends Panel {
 		this._font = this._terminalService.configHelper.getFont();
 		// TODO: Can we support ligatures?
 		// dom.toggleClass(this._parentDomElement, 'enable-ligatures', this._terminalService.configHelper.config.fontLigatures);
-		// TODO: How to handle Disable bold?
-		// dom.toggleClass(this._parentDomElement, 'disable-bold', !this._terminalService.configHelper.config.enableBold);
 		this.layout(new Dimension(this._parentDomElement.offsetWidth, this._parentDomElement.offsetHeight));
 	}
 

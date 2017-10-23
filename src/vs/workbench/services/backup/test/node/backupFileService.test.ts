@@ -19,8 +19,8 @@ import { FileService } from 'vs/workbench/services/files/node/fileService';
 import { EnvironmentService } from 'vs/platform/environment/node/environmentService';
 import { parseArgs } from 'vs/platform/environment/node/argv';
 import { RawTextSource } from 'vs/editor/common/model/textSource';
-import { TestContextService, TestTextResourceConfigurationService } from 'vs/workbench/test/workbenchTestServices';
-import { Workspace } from 'vs/platform/workspace/common/workspace';
+import { TestContextService, TestTextResourceConfigurationService, getRandomTestPath } from 'vs/workbench/test/workbenchTestServices';
+import { Workspace, toWorkspaceFolders } from 'vs/platform/workspace/common/workspace';
 import { TestConfigurationService } from 'vs/platform/configuration/test/common/testConfigurationService';
 
 class TestEnvironmentService extends EnvironmentService {
@@ -34,7 +34,7 @@ class TestEnvironmentService extends EnvironmentService {
 	get backupWorkspacesPath(): string { return this._backupWorkspacesPath; }
 }
 
-const parentDir = path.join(os.tmpdir(), 'vsctests', 'service');
+const parentDir = getRandomTestPath(os.tmpdir(), 'vsctests', 'backupfileservice');
 const backupHome = path.join(parentDir, 'Backups');
 const workspacesJsonPath = path.join(backupHome, 'workspaces.json');
 
@@ -49,7 +49,7 @@ const untitledBackupPath = path.join(workspaceBackupPath, 'untitled', crypto.cre
 
 class TestBackupFileService extends BackupFileService {
 	constructor(workspace: Uri, backupHome: string, workspacesJsonPath: string) {
-		const fileService = new FileService(new TestContextService(new Workspace(workspace.fsPath, workspace.fsPath, [workspace])), new TestTextResourceConfigurationService(), new TestConfigurationService(), { disableWatcher: true });
+		const fileService = new FileService(new TestContextService(new Workspace(workspace.fsPath, workspace.fsPath, toWorkspaceFolders([{ path: workspace.fsPath }]))), new TestTextResourceConfigurationService(), new TestConfigurationService(), { disableWatcher: true });
 
 		super(workspaceBackupPath, fileService);
 	}

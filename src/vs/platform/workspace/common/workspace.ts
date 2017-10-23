@@ -5,12 +5,15 @@
 'use strict';
 
 import URI from 'vs/base/common/uri';
+import * as paths from 'vs/base/common/paths';
+import * as resources from 'vs/base/common/resources';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
-import { TrieMap } from 'vs/base/common/map';
+import { TernarySearchTree } from 'vs/base/common/map';
 import Event from 'vs/base/common/event';
+import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier, IStoredWorkspaceFolder, isRawFileWorkspaceFolder, isRawUriWorkspaceFolder } from 'vs/platform/workspaces/common/workspaces';
+import { coalesce, distinct } from 'vs/base/common/arrays';
 import { isLinux } from 'vs/base/common/platform';
-import { distinct } from 'vs/base/common/arrays';
-import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier } from 'vs/platform/workspaces/common/workspaces';
+import { TPromise } from 'vs/base/common/winjs.base';
 
 export const IWorkspaceContextService = createDecorator<IWorkspaceContextService>('contextService');
 
@@ -20,14 +23,45 @@ export enum WorkbenchState {
 	WORKSPACE
 }
 
+export interface IWorkspaceFoldersChangeEvent {
+	added: IWorkspaceFolder[];
+	removed: IWorkspaceFolder[];
+	changed: IWorkspaceFolder[];
+}
+
 export interface IWorkspaceContextService {
 	_serviceBrand: any;
+
+	/**
+	 * An event which fires on workbench state changes.
+	 */
+	onDidChangeWorkbenchState: Event<WorkbenchState>;
+
+	/**
+	 * An event which fires on workspace name changes.
+	 */
+	onDidChangeWorkspaceName: Event<void>;
+
+	/**
+	 * An event which fires on workspace folders change.
+	 */
+	onDidChangeWorkspaceFolders: Event<IWorkspaceFoldersChangeEvent>;
 
 	/**
 	 * Provides access to the workspace object the platform is running with. This may be null if the workbench was opened
 	 * without workspace (empty);
 	 */
 	getWorkspace(): IWorkspace;
+
+	/**
+	 * add folders to the existing workspace
+	 */
+	addFolders(folders: URI[]): TPromise<void>;
+
+	/**
+	 * remove folders from the existing workspace
+	 */
+	removeFolders(folders: URI[]): TPromise<void>;
 
 	/**
 	 * Return the state of the workbench.
@@ -39,20 +73,10 @@ export interface IWorkspaceContextService {
 	getWorkbenchState(): WorkbenchState;
 
 	/**
-	 * An event which fires on workspace name changes.
-	 */
-	onDidChangeWorkspaceName: Event<void>;
-
-	/**
-	 * An event which fires on workspace folders change.
-	 */
-	onDidChangeWorkspaceFolders: Event<void>;
-
-	/**
 	 * Returns the folder for the given resource from the workspace.
 	 * Can be null if there is no workspace or the resource is not inside the workspace.
 	 */
-	getWorkspaceFolder(resource: URI): URI;
+	getWorkspaceFolder(resource: URI): IWorkspaceFolder;
 
 	/**
 	 * Return `true` if the current workspace has the given identifier otherwise `false`.
@@ -63,11 +87,6 @@ export interface IWorkspaceContextService {
 	 * Returns if the provided resource is inside the workspace or not.
 	 */
 	isInsideWorkspace(resource: URI): boolean;
-
-	/**
-	 * Given a workspace relative path, returns the resource with the absolute path.
-	 */
-	toResource: (workspaceRelativePath: string) => URI;
 }
 
 export interface IWorkspace {
@@ -85,7 +104,7 @@ export interface IWorkspace {
 	/**
 	 * Folders in the workspace.
 	 */
-	readonly folders: URI[];
+	readonly folders: IWorkspaceFolder[];
 
 	/**
 	 * the location of the workspace configuration
@@ -93,32 +112,70 @@ export interface IWorkspace {
 	readonly configuration?: URI;
 }
 
+export interface IWorkspaceFolderData {
+	/**
+	 * The associated URI for this workspace folder.
+	 */
+	readonly uri: URI;
+
+	/**
+	 * The name of this workspace folder. Defaults to
+	 * the basename its [uri-path](#Uri.path)
+	 */
+	readonly name: string;
+
+	/**
+	 * The ordinal number of this workspace folder.
+	 */
+	readonly index: number;
+}
+
+export interface IWorkspaceFolder extends IWorkspaceFolderData {
+
+	/**
+	 * Given workspace folder relative path, returns the resource with the absolute path.
+	 */
+	toResource: (relativePath: string) => URI;
+}
+
 export class Workspace implements IWorkspace {
 
-	private _foldersMap: TrieMap<URI> = new TrieMap<URI>();
-	private _folders: URI[];
+	private _foldersMap: TernarySearchTree<WorkspaceFolder> = TernarySearchTree.forPaths<WorkspaceFolder>();
+	private _folders: WorkspaceFolder[];
 
 	constructor(
-		public readonly id: string,
-		private _name: string,
-		folders: URI[],
+		private _id: string,
+		private _name: string = '',
+		folders: WorkspaceFolder[] = [],
 		private _configuration: URI = null,
-		public readonly ctime?: number
+		private _ctime?: number
 	) {
 		this.folders = folders;
 	}
 
-	private ensureUnique(folders: URI[]): URI[] {
-		return distinct(folders, folder => isLinux ? folder.fsPath : folder.fsPath.toLowerCase());
+	public update(workspace: Workspace) {
+		this._id = workspace.id;
+		this._name = workspace.name;
+		this._configuration = workspace.configuration;
+		this._ctime = workspace.ctime;
+		this.folders = workspace.folders;
 	}
 
-	public get folders(): URI[] {
+	public get folders(): WorkspaceFolder[] {
 		return this._folders;
 	}
 
-	public set folders(folders: URI[]) {
-		this._folders = this.ensureUnique(folders);
+	public set folders(folders: WorkspaceFolder[]) {
+		this._folders = folders;
 		this.updateFoldersMap();
+	}
+
+	public get id(): string {
+		return this._id;
+	}
+
+	public get ctime(): number {
+		return this._ctime;
 	}
 
 	public get name(): string {
@@ -137,22 +194,86 @@ export class Workspace implements IWorkspace {
 		this._configuration = configuration;
 	}
 
-	public getFolder(resource: URI): URI {
+	public getFolder(resource: URI): IWorkspaceFolder {
 		if (!resource) {
 			return null;
 		}
 
-		return this._foldersMap.findSubstr(resource.fsPath);
+		return this._foldersMap.findSubstr(resource.toString());
 	}
 
 	private updateFoldersMap(): void {
-		this._foldersMap = new TrieMap<URI>();
+		this._foldersMap = TernarySearchTree.forPaths<WorkspaceFolder>();
 		for (const folder of this.folders) {
-			this._foldersMap.insert(folder.fsPath, folder);
+			this._foldersMap.set(folder.uri.toString(), folder);
 		}
 	}
 
 	public toJSON(): IWorkspace {
 		return { id: this.id, folders: this.folders, name: this.name };
 	}
+}
+
+export class WorkspaceFolder implements IWorkspaceFolder {
+
+	readonly uri: URI;
+	readonly name: string;
+	readonly index: number;
+
+	constructor(data: IWorkspaceFolderData,
+		readonly raw?: IStoredWorkspaceFolder) {
+		this.uri = data.uri;
+		this.index = data.index;
+		this.name = data.name;
+	}
+
+	toResource(relativePath: string): URI {
+		return this.uri.with({ path: paths.join(this.uri.path, relativePath) });
+	}
+
+	toJSON(): IWorkspaceFolderData {
+		return { uri: this.uri, name: this.name, index: this.index };
+	}
+}
+
+export function toWorkspaceFolders(configuredFolders: IStoredWorkspaceFolder[], relativeTo?: URI): WorkspaceFolder[] {
+	let workspaceFolders = parseWorkspaceFolders(configuredFolders, relativeTo);
+	return ensureUnique(coalesce(workspaceFolders))
+		.map(({ uri, raw, name }, index) => new WorkspaceFolder({ uri, name: name || resources.basenameOrAuthority(uri), index }, raw));
+}
+
+function parseWorkspaceFolders(configuredFolders: IStoredWorkspaceFolder[], relativeTo: URI): WorkspaceFolder[] {
+	return configuredFolders.map((configuredFolder, index) => {
+		let uri: URI;
+		if (isRawFileWorkspaceFolder(configuredFolder)) {
+			uri = toUri(configuredFolder.path, relativeTo);
+		} else if (isRawUriWorkspaceFolder(configuredFolder)) {
+			try {
+				uri = URI.parse(configuredFolder.uri);
+			} catch (e) {
+				console.warn(e);
+				// ignore
+			}
+		}
+		if (!uri) {
+			return void 0;
+		}
+		return new WorkspaceFolder({ uri, name: configuredFolder.name, index }, configuredFolder);
+	});
+}
+
+function toUri(path: string, relativeTo: URI): URI {
+	if (path) {
+		if (paths.isAbsolute(path)) {
+			return URI.file(path);
+		}
+		if (relativeTo) {
+			return relativeTo.with({ path: paths.join(relativeTo.path, path) });
+		}
+	}
+	return null;
+}
+
+function ensureUnique(folders: WorkspaceFolder[]): WorkspaceFolder[] {
+	return distinct(folders, folder => isLinux ? folder.uri.toString() : folder.uri.toString().toLowerCase());
 }

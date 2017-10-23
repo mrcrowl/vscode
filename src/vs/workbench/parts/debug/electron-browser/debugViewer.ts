@@ -8,6 +8,7 @@ import { TPromise } from 'vs/base/common/winjs.base';
 import * as lifecycle from 'vs/base/common/lifecycle';
 import { KeyCode } from 'vs/base/common/keyCodes';
 import * as paths from 'vs/base/common/paths';
+import * as resources from 'vs/base/common/resources';
 import * as errors from 'vs/base/common/errors';
 import { equalsIgnoreCase } from 'vs/base/common/strings';
 import { IKeyboardEvent } from 'vs/base/browser/keyboardEvent';
@@ -69,8 +70,10 @@ export function renderExpressionValue(expressionOrValue: debug.IExpression | str
 		}
 	}
 
-	if (options.colorize) {
-		if (!isNaN(+value)) {
+	if (options.colorize && typeof expressionOrValue !== 'string') {
+		if (expressionOrValue.type === 'number' || expressionOrValue.type === 'boolean' || expressionOrValue.type === 'string') {
+			dom.addClass(container, expressionOrValue.type);
+		} else if (!isNaN(+value)) {
 			dom.addClass(container, 'number');
 		} else if (booleanRegex.test(value)) {
 			dom.addClass(container, 'boolean');
@@ -194,7 +197,7 @@ function getSourceName(source: Source, contextService: IWorkspaceContextService,
 		return source.name;
 	}
 
-	return paths.basename(source.uri.fsPath);
+	return resources.basenameOrAuthority(source.uri);
 }
 
 export class BaseDebugController extends DefaultController {
@@ -278,6 +281,9 @@ export class CallStackController extends BaseDebugController {
 			}
 
 			return element.source.uri.toString();
+		}
+		if (element instanceof Thread) {
+			return element.threadId;
 		}
 	}
 
@@ -1059,11 +1065,12 @@ export class BreakpointsActionProvider implements IActionProvider {
 	}
 
 	public getSecondaryActions(tree: ITree, element: any): TPromise<IAction[]> {
-		const actions: IAction[] = [];
-
-		if (element instanceof Breakpoint || element instanceof FunctionBreakpoint) {
-			actions.push(this.instantiationService.createInstance(RemoveBreakpointAction, RemoveBreakpointAction.ID, RemoveBreakpointAction.LABEL));
+		if (element instanceof ExceptionBreakpoint) {
+			return TPromise.as([]);
 		}
+
+		const actions: IAction[] = [];
+		actions.push(this.instantiationService.createInstance(RemoveBreakpointAction, RemoveBreakpointAction.ID, RemoveBreakpointAction.LABEL));
 		if (this.debugService.getModel().getBreakpoints().length + this.debugService.getModel().getFunctionBreakpoints().length > 1) {
 			actions.push(this.instantiationService.createInstance(RemoveAllBreakpointsAction, RemoveAllBreakpointsAction.ID, RemoveAllBreakpointsAction.LABEL));
 			actions.push(new Separator());
@@ -1233,10 +1240,10 @@ export class BreakpointsRenderer implements IRenderer {
 		if (breakpoint.column) {
 			data.lineNumber.textContent += `:${breakpoint.column}`;
 		}
-		data.filePath.textContent = getPathLabel(paths.dirname(breakpoint.uri.fsPath), this.contextService, this.environmentService);
+		data.filePath.textContent = getPathLabel(resources.dirname(breakpoint.uri), this.contextService, this.environmentService);
 		data.checkbox.checked = breakpoint.enabled;
 
-		const debugActive = this.debugService.state === debug.State.Running || this.debugService.state === debug.State.Stopped || this.debugService.state === debug.State.Initializing;
+		const debugActive = this.debugService.state === debug.State.Running || this.debugService.state === debug.State.Stopped;
 		if (debugActive && !breakpoint.verified) {
 			tree.addTraits('disabled', [breakpoint]);
 			if (breakpoint.message) {
@@ -1260,7 +1267,7 @@ export class BreakpointsAccessibilityProvider implements IAccessibilityProvider 
 
 	public getAriaLabel(tree: ITree, element: any): string {
 		if (element instanceof Breakpoint) {
-			return nls.localize('breakpointAriaLabel', "Breakpoint line {0} {1}, breakpoints, debug", (<Breakpoint>element).lineNumber, getPathLabel(paths.basename((<Breakpoint>element).uri.fsPath), this.contextService), this.contextService);
+			return nls.localize('breakpointAriaLabel', "Breakpoint line {0} {1}, breakpoints, debug", (<Breakpoint>element).lineNumber, getPathLabel(resources.basenameOrAuthority((<Breakpoint>element).uri), this.contextService), this.contextService);
 		}
 		if (element instanceof FunctionBreakpoint) {
 			return nls.localize('functionBreakpointAriaLabel', "Function breakpoint {0}, breakpoints, debug", (<FunctionBreakpoint>element).name);

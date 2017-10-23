@@ -39,5 +39,5 @@
 	"workbench.action.terminal.hideFindWidget": "Nascondi widget Trova",
 	"nextTerminalFindTerm": "Mostra il termine di ricerca successivo",
 	"previousTerminalFindTerm": "Mostra il termine di ricerca precedente",
-	"quickOpenTerm": "Terminale: Cambia terminale attivo"
+	"quickOpenTerm": "Cambia terminale attivo"
 }

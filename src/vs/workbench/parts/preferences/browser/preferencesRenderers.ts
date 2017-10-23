@@ -22,9 +22,7 @@ import { IContextMenuService, ContextSubMenu } from 'vs/platform/contextview/bro
 import { SettingsGroupTitleWidget, EditPreferenceWidget, SettingsHeaderWidget } from 'vs/workbench/parts/preferences/browser/preferencesWidgets';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { RangeHighlightDecorations } from 'vs/workbench/common/editor/rangeDecorations';
-import { IConfigurationEditingService, ConfigurationEditingError, ConfigurationEditingErrorCode, ConfigurationTarget } from 'vs/workbench/services/configuration/common/configurationEditing';
 import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
-import { overrideIdentifierFromKey } from 'vs/platform/configuration/common/model';
 import { IMarkerService, IMarkerData } from 'vs/platform/markers/common/markers';
 import { IWorkspaceConfigurationService } from 'vs/workbench/services/configuration/common/configuration';
 import { IMessageService, Severity } from 'vs/platform/message/common/message';
@@ -33,6 +31,7 @@ import { ICursorPositionChangedEvent } from 'vs/editor/common/controller/cursorE
 import { ModelDecorationOptions } from 'vs/editor/common/model/textModelWithDecorations';
 import { IWorkspaceContextService, WorkbenchState } from 'vs/platform/workspace/common/workspace';
 import { MarkdownString } from 'vs/base/common/htmlContent';
+import { overrideIdentifierFromKey, IConfigurationService, ConfigurationTarget, IConfigurationChangeEvent } from 'vs/platform/configuration/common/configuration';
 
 export interface IPreferencesRenderer<T> extends IDisposable {
 	preferencesModel: IPreferencesEditorModel<T>;
@@ -72,7 +71,7 @@ export class UserSettingsRenderer extends Disposable implements IPreferencesRend
 		@IPreferencesService protected preferencesService: IPreferencesService,
 		@ITelemetryService private telemetryService: ITelemetryService,
 		@ITextFileService private textFileService: ITextFileService,
-		@IConfigurationEditingService private configurationEditingService: IConfigurationEditingService,
+		@IConfigurationService private configurationService: IConfigurationService,
 		@IMessageService private messageService: IMessageService,
 		@IInstantiationService protected instantiationService: IInstantiationService
 	) {
@@ -108,22 +107,16 @@ export class UserSettingsRenderer extends Disposable implements IPreferencesRend
 	}
 
 	public updatePreference(key: string, value: any, source: ISetting): void {
+		/* __GDPR__
+			"defaultSettingsActions.copySetting" : {
+				"userConfigurationKeys" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
+			}
+		*/
 		this.telemetryService.publicLog('defaultSettingsActions.copySetting', { userConfigurationKeys: [key] });
 		const overrideIdentifier = source.overrideOf ? overrideIdentifierFromKey(source.overrideOf.key) : null;
 		const resource = this.preferencesModel.uri;
-		this.configurationEditingService.writeConfiguration(this.preferencesModel.configurationTarget, { key, value }, { donotSave: this.textFileService.isDirty(resource), donotNotifyError: true, scopes: { overrideIdentifier, resource } })
-			.then(() => this.onSettingUpdated(source), error => {
-				this.messageService.show(Severity.Error, this.toErrorMessage(error, this.preferencesModel.configurationTarget));
-			});
-	}
-
-	private toErrorMessage(error: ConfigurationEditingError, target: ConfigurationTarget): string {
-		switch (error.code) {
-			case ConfigurationEditingErrorCode.ERROR_INVALID_CONFIGURATION: {
-				return nls.localize('errorInvalidConfiguration', "Unable to write into settings. Correct errors/warnings in the file and try again.");
-			};
-		}
-		return error.message;
+		this.configurationService.updateValue(key, value, { overrideIdentifier, resource }, this.preferencesModel.configurationTarget)
+			.then(() => this.onSettingUpdated(source));
 	}
 
 	private onModelChanged(): void {
@@ -187,11 +180,11 @@ export class WorkspaceSettingsRenderer extends UserSettingsRenderer implements I
 		@IPreferencesService preferencesService: IPreferencesService,
 		@ITelemetryService telemetryService: ITelemetryService,
 		@ITextFileService textFileService: ITextFileService,
-		@IConfigurationEditingService configurationEditingService: IConfigurationEditingService,
+		@IConfigurationService configurationService: IConfigurationService,
 		@IMessageService messageService: IMessageService,
 		@IInstantiationService instantiationService: IInstantiationService
 	) {
-		super(editor, preferencesModel, associatedPreferencesModel, preferencesService, telemetryService, textFileService, configurationEditingService, messageService, instantiationService);
+		super(editor, preferencesModel, associatedPreferencesModel, preferencesService, telemetryService, textFileService, configurationService, messageService, instantiationService);
 		this.untrustedSettingRenderer = this._register(instantiationService.createInstance(UnsupportedWorkspaceSettingsRenderer, editor, preferencesModel));
 		this.workspaceConfigurationRenderer = this._register(instantiationService.createInstance(WorkspaceConfigurationRenderer, editor, preferencesModel));
 	}
@@ -215,11 +208,11 @@ export class FolderSettingsRenderer extends UserSettingsRenderer implements IPre
 		@IPreferencesService preferencesService: IPreferencesService,
 		@ITelemetryService telemetryService: ITelemetryService,
 		@ITextFileService textFileService: ITextFileService,
-		@IConfigurationEditingService configurationEditingService: IConfigurationEditingService,
+		@IConfigurationService configurationService: IConfigurationService,
 		@IMessageService messageService: IMessageService,
 		@IInstantiationService instantiationService: IInstantiationService
 	) {
-		super(editor, preferencesModel, associatedPreferencesModel, preferencesService, telemetryService, textFileService, configurationEditingService, messageService, instantiationService);
+		super(editor, preferencesModel, associatedPreferencesModel, preferencesService, telemetryService, textFileService, configurationService, messageService, instantiationService);
 		this.unsupportedWorkbenchSettingsRenderer = this._register(instantiationService.createInstance(UnsupportedWorkbenchSettingsRenderer, editor, preferencesModel));
 	}
 
@@ -408,7 +401,7 @@ class DefaultSettingsHeaderRenderer extends Disposable {
 
 	public render(settingsGroups: ISettingsGroup[]) {
 		if (settingsGroups.length) {
-			this.settingsHeaderWidget.setMessage('');
+			this.settingsHeaderWidget.setMessage(nls.localize('defaultSettings', "Place your settings in the right hand side editor to override."));
 		} else {
 			this.settingsHeaderWidget.setMessage(nls.localize('noSettingsFound', "No Settings Found."));
 		}
@@ -558,6 +551,7 @@ export class FilteredMatchesRenderer extends Disposable implements HiddenAreasPr
 				stickiness: editorCommon.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
 				className: 'findMatch'
 			}
+
 		};
 	}
 
@@ -796,10 +790,14 @@ class EditSettingRenderer extends Disposable {
 			let configurationNode = configurationMap[setting.key];
 			if (configurationNode) {
 				if (this.isDefaultSettings()) {
+					if (setting.key === 'launch') {
+						// Do not show because of https://github.com/Microsoft/vscode/issues/32593
+						return false;
+					}
 					return true;
 				}
 				if (configurationNode.type === 'boolean' || configurationNode.enum) {
-					if ((<SettingsEditorModel>this.masterSettingsModel).configurationTarget !== ConfigurationTarget.FOLDER) {
+					if ((<SettingsEditorModel>this.masterSettingsModel).configurationTarget !== ConfigurationTarget.WORKSPACE_FOLDER) {
 						return true;
 					}
 					if (configurationNode.scope === ConfigurationScope.RESOURCE) {
@@ -952,7 +950,7 @@ class UnsupportedWorkspaceSettingsRenderer extends Disposable {
 		@IMarkerService private markerService: IMarkerService
 	) {
 		super();
-		this._register(this.configurationService.onDidUpdateConfiguration(() => this.render()));
+		this._register(this.configurationService.onDidChangeConfiguration(e => this.onDidConfigurationChange(e)));
 	}
 
 	private getMarkerMessage(settingKey: string): string {
@@ -986,6 +984,12 @@ class UnsupportedWorkspaceSettingsRenderer extends Disposable {
 			} else {
 				this.markerService.remove('preferencesEditor', [this.workspaceSettingsEditorModel.uri]);
 			}
+		}
+	}
+
+	private onDidConfigurationChange(event: IConfigurationChangeEvent): void {
+		if (event.source === ConfigurationTarget.DEFAULT || event.source === ConfigurationTarget.WORKSPACE || event.source === ConfigurationTarget.WORKSPACE_FOLDER) {
+			this.render();
 		}
 	}
 

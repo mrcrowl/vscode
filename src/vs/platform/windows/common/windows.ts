@@ -13,6 +13,7 @@ import { IProcessEnvironment } from 'vs/base/common/platform';
 import { ParsedArgs } from 'vs/platform/environment/common/environment';
 import { IWorkspaceIdentifier } from 'vs/platform/workspaces/common/workspaces';
 import { IRecentlyOpened } from 'vs/platform/history/common/history';
+import { ICommandAction } from 'vs/platform/actions/common/actions';
 
 export const IWindowsService = createDecorator<IWindowsService>('windowsService');
 
@@ -24,6 +25,11 @@ export interface INativeOpenDialogOptions {
 
 	telemetryEventName?: string;
 	telemetryExtraData?: ITelemetryData;
+}
+
+export interface IEnterWorkspaceResult {
+	workspace: IWorkspaceIdentifier;
+	backupPath: string;
 }
 
 export interface IWindowsService {
@@ -42,8 +48,8 @@ export interface IWindowsService {
 	toggleDevTools(windowId: number): TPromise<void>;
 	closeWorkspace(windowId: number): TPromise<void>;
 	openWorkspace(windowId: number): TPromise<void>;
-	createAndOpenWorkspace(windowId: number, folders?: string[], path?: string): TPromise<void>;
-	saveAndOpenWorkspace(windowId: number, path: string): TPromise<void>;
+	createAndEnterWorkspace(windowId: number, folderPaths?: string[], path?: string): TPromise<IEnterWorkspaceResult>;
+	saveAndEnterWorkspace(windowId: number, path: string): TPromise<IEnterWorkspaceResult>;
 	toggleFullScreen(windowId: number): TPromise<void>;
 	setRepresentedFilename(windowId: number, fileName: string): TPromise<void>;
 	addRecentlyOpened(files: string[]): TPromise<void>;
@@ -68,6 +74,9 @@ export interface IWindowsService {
 	mergeAllWindowTabs(): TPromise<void>;
 	toggleWindowTabsBar(): TPromise<void>;
 
+	// macOS TouchBar
+	updateTouchBar(windowId: number, items: ICommandAction[][]): TPromise<void>;
+
 	// Shared process
 	whenSharedProcessReady(): TPromise<void>;
 	toggleSharedProcess(): TPromise<void>;
@@ -91,6 +100,11 @@ export interface IWindowsService {
 
 export const IWindowService = createDecorator<IWindowService>('windowService');
 
+export interface IMessageBoxResult {
+	button: number;
+	checkboxChecked?: boolean;
+}
+
 export interface IWindowService {
 
 	_serviceBrand: any;
@@ -106,8 +120,9 @@ export interface IWindowService {
 	toggleDevTools(): TPromise<void>;
 	closeWorkspace(): TPromise<void>;
 	openWorkspace(): TPromise<void>;
-	createAndOpenWorkspace(folders?: string[], path?: string): TPromise<void>;
-	saveAndOpenWorkspace(path: string): TPromise<void>;
+	updateTouchBar(items: ICommandAction[][]): TPromise<void>;
+	createAndEnterWorkspace(folderPaths?: string[], path?: string): TPromise<IEnterWorkspaceResult>;
+	saveAndEnterWorkspace(path: string): TPromise<IEnterWorkspaceResult>;
 	toggleFullScreen(): TPromise<void>;
 	setRepresentedFilename(fileName: string): TPromise<void>;
 	getRecentlyOpened(): TPromise<IRecentlyOpened>;
@@ -120,7 +135,8 @@ export interface IWindowService {
 	unmaximizeWindow(): TPromise<void>;
 	onWindowTitleDoubleClick(): TPromise<void>;
 	show(): TPromise<void>;
-	showMessageBox(options: Electron.MessageBoxOptions): number;
+	showMessageBoxSync(options: Electron.MessageBoxOptions): number;
+	showMessageBox(options: Electron.MessageBoxOptions): TPromise<IMessageBoxResult>;
 	showSaveDialog(options: Electron.SaveDialogOptions, callback?: (fileName: string) => void): string;
 	showOpenDialog(options: Electron.OpenDialogOptions, callback?: (fileNames: string[]) => void): string[];
 }
@@ -232,7 +248,6 @@ export interface IWindowConfiguration extends ParsedArgs, IOpenFileRequest {
 	workspace?: IWorkspaceIdentifier;
 	folderPath?: string;
 
-	isISOKeyboard?: boolean;
 	zoomLevel?: number;
 	fullscreen?: boolean;
 	highContrast?: boolean;
@@ -243,4 +258,9 @@ export interface IWindowConfiguration extends ParsedArgs, IOpenFileRequest {
 	perfStartTime?: number;
 	perfAppReady?: number;
 	perfWindowLoadTime?: number;
+}
+
+export interface IRunActionInWindowRequest {
+	id: string;
+	from: 'menu' | 'touchbar' | 'mouse';
 }

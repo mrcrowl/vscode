@@ -15,8 +15,10 @@ import { IWorkbenchActionRegistry, Extensions as WorkbenchExtensions } from 'vs/
 import { IPanelService, IPanelIdentifier } from 'vs/workbench/services/panel/common/panelService';
 import { IPartService, Parts } from 'vs/workbench/services/part/common/partService';
 import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
+import { ActivityAction } from 'vs/workbench/browser/parts/compositebar/compositeBarActions';
+import { IActivity } from 'vs/workbench/common/activity';
 
-export class PanelAction extends Action {
+export class OpenPanelAction extends Action {
 
 	constructor(
 		private panel: IPanelIdentifier,
@@ -146,6 +148,20 @@ export class ToggleMaximizedPanelAction extends Action {
 	public dispose(): void {
 		super.dispose();
 		this.toDispose = dispose(this.toDispose);
+	}
+}
+
+export class PanelActivityAction extends ActivityAction {
+
+	constructor(
+		activity: IActivity,
+		@IPanelService private panelService: IPanelService
+	) {
+		super(activity);
+	}
+
+	public run(event: any): TPromise<any> {
+		return this.panelService.openPanel(this.activity.id, true).then(() => this.activate());
 	}
 }
 

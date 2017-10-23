@@ -28,13 +28,13 @@ import { alert } from 'vs/base/browser/ui/aria/aria';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { attachListStyler } from 'vs/platform/theme/common/styler';
 import { IThemeService, ITheme, registerThemingParticipant } from 'vs/platform/theme/common/themeService';
-import { registerColor, editorWidgetBackground, listFocusBackground, activeContrastBorder, listHighlightForeground, editorForeground, editorWidgetBorder, focusBorder, textLinkForeground } from 'vs/platform/theme/common/colorRegistry';
+import { registerColor, editorWidgetBackground, listFocusBackground, activeContrastBorder, listHighlightForeground, editorForeground, editorWidgetBorder, focusBorder, textLinkForeground, textCodeBlockBackground } from 'vs/platform/theme/common/colorRegistry';
 import { IStorageService, StorageScope } from 'vs/platform/storage/common/storage';
 import { MarkdownRenderer } from 'vs/editor/contrib/markdown/browser/markdownRenderer';
 import { IModeService } from 'vs/editor/common/services/modeService';
 import { IOpenerService } from 'vs/platform/opener/common/opener';
 
-const sticky = false; // for development purposes
+const sticky = true; // for development purposes
 const expandSuggestionDocsByDefault = false;
 const maxSuggestionsToShow = 12;
 
@@ -253,7 +253,8 @@ class SuggestionDetails {
 			this.docs.textContent = item.suggestion.documentation;
 		} else {
 			addClass(this.docs, 'markdown-docs');
-			this.docs.innerHTML = this.markdownRenderer.render(item.suggestion.documentation).innerHTML;
+			this.docs.innerHTML = '';
+			this.docs.appendChild(this.markdownRenderer.render(item.suggestion.documentation));
 		}
 
 		if (item.suggestion.detail) {
@@ -728,6 +729,15 @@ export class SuggestWidget implements IContentWidget, IDelegate<ICompletionItem>
 		} else {
 			const { stats } = this.completionModel;
 			stats['wasAutomaticallyTriggered'] = !!isAuto;
+			/* __GDPR__
+				"suggestWidget" : {
+					"wasAutomaticallyTriggered" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
+					"${include}": [
+						"${ICompletionStats}",
+						"${EditorTelemetryData}"
+					]
+				}
+			*/
 			this.telemetryService.publicLog('suggestWidget', { ...stats, ...this.editor.getTelemetryData() });
 
 			this.focusedItem = null;
@@ -855,6 +865,13 @@ export class SuggestWidget implements IContentWidget, IDelegate<ICompletionItem>
 				this.details.element.style.borderColor = this.detailsFocusBorderColor;
 			}
 		}
+		/* __GDPR__
+			"suggestWidget:toggleDetailsFocus" : {
+				"${include}": [
+					"${EditorTelemetryData}"
+				]
+			}
+		*/
 		this.telemetryService.publicLog('suggestWidget:toggleDetailsFocus', this.editor.getTelemetryData());
 	}
 
@@ -869,6 +886,13 @@ export class SuggestWidget implements IContentWidget, IDelegate<ICompletionItem>
 			removeClass(this.element, 'docs-side');
 			removeClass(this.element, 'docs-below');
 			this.editor.layoutContentWidget(this);
+			/* __GDPR__
+				"suggestWidget:collapseDetails" : {
+					"${include}": [
+						"${EditorTelemetryData}"
+					]
+				}
+			*/
 			this.telemetryService.publicLog('suggestWidget:collapseDetails', this.editor.getTelemetryData());
 		} else {
 			if (this.state !== State.Open && this.state !== State.Details) {
@@ -877,6 +901,13 @@ export class SuggestWidget implements IContentWidget, IDelegate<ICompletionItem>
 
 			this.updateExpandDocsSetting(true);
 			this.showDetails();
+			/* __GDPR__
+				"suggestWidget:expandDetails" : {
+					"${include}": [
+						"${EditorTelemetryData}"
+					]
+				}
+			*/
 			this.telemetryService.publicLog('suggestWidget:expandDetails', this.editor.getTelemetryData());
 		}
 
@@ -1075,7 +1106,7 @@ export class SuggestWidget implements IContentWidget, IDelegate<ICompletionItem>
 registerThemingParticipant((theme, collector) => {
 	let matchHighlight = theme.getColor(editorSuggestWidgetHighlightForeground);
 	if (matchHighlight) {
-		collector.addRule(`.monaco-editor .suggest-widget:not(.frozen) .monaco-highlighted-label .highlight { color: ${matchHighlight}; }`);
+		collector.addRule(`.monaco-editor .suggest-widget:not(.frozen) .monaco-list .monaco-list-row .monaco-highlighted-label .highlight { color: ${matchHighlight}; }`);
 	}
 	let foreground = theme.getColor(editorSuggestWidgetForeground);
 	if (foreground) {
@@ -1085,5 +1116,10 @@ registerThemingParticipant((theme, collector) => {
 	const link = theme.getColor(textLinkForeground);
 	if (link) {
 		collector.addRule(`.monaco-editor .suggest-widget a { color: ${link}; }`);
+	}
+
+	let codeBackground = theme.getColor(textCodeBlockBackground);
+	if (codeBackground) {
+		collector.addRule(`.monaco-editor .suggest-widget code { background-color: ${codeBackground}; }`);
 	}
 });

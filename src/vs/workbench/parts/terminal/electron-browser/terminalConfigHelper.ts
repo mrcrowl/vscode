@@ -14,6 +14,7 @@ import { IStorageService, StorageScope } from 'vs/platform/storage/common/storag
 import { ITerminalConfiguration, ITerminalConfigHelper, ITerminalFont, IShellLaunchConfig, IS_WORKSPACE_SHELL_ALLOWED_STORAGE_KEY } from 'vs/workbench/parts/terminal/common/terminal';
 import { TPromise } from 'vs/base/common/winjs.base';
 import Severity from 'vs/base/common/severity';
+import { isFedora } from 'vs/workbench/parts/terminal/electron-browser/terminal';
 
 interface IEditorConfiguration {
 	editor: IEditorOptions;
@@ -84,17 +85,33 @@ export class TerminalConfigHelper implements ITerminalConfigHelper {
 	 * Gets the font information based on the terminal.integrated.fontFamily
 	 * terminal.integrated.fontSize, terminal.integrated.lineHeight configuration properties
 	 */
-	public getFont(): ITerminalFont {
+	public getFont(excludeDimensions?: boolean): ITerminalFont {
 		const config = this._configurationService.getConfiguration();
 		const editorConfig = (<IEditorConfiguration>config).editor;
 		const terminalConfig = this.config;
 
-		const fontFamily = terminalConfig.fontFamily || editorConfig.fontFamily;
+		let fontFamily = terminalConfig.fontFamily || editorConfig.fontFamily;
+
+		// Work around bad font on Fedora
+		if (!terminalConfig.fontFamily) {
+			if (isFedora) {
+				fontFamily = '\'DejaVu Sans Mono\'';
+			}
+		}
+
 		let fontSize = this._toInteger(terminalConfig.fontSize, 0);
 		if (fontSize <= 0) {
 			fontSize = EDITOR_FONT_DEFAULTS.fontSize;
 		}
 		const lineHeight = terminalConfig.lineHeight ? Math.max(terminalConfig.lineHeight, 1) : DEFAULT_LINE_HEIGHT;
+
+		if (excludeDimensions) {
+			return {
+				fontFamily,
+				fontSize,
+				lineHeight
+			};
+		}
 
 		return this._measureFont(fontFamily, fontSize, lineHeight);
 	}
@@ -106,8 +123,8 @@ export class TerminalConfigHelper implements ITerminalConfigHelper {
 	public mergeDefaultShellPathAndArgs(shell: IShellLaunchConfig): void {
 		// Check whether there is a workspace setting
 		const platformKey = platform.isWindows ? 'windows' : platform.isMacintosh ? 'osx' : 'linux';
-		const shellConfigValue = this._workspaceConfigurationService.lookup<string>(`terminal.integrated.shell.${platformKey}`);
-		const shellArgsConfigValue = this._workspaceConfigurationService.lookup<string[]>(`terminal.integrated.shellArgs.${platformKey}`);
+		const shellConfigValue = this._workspaceConfigurationService.inspect<string>(`terminal.integrated.shell.${platformKey}`);
+		const shellArgsConfigValue = this._workspaceConfigurationService.inspect<string[]>(`terminal.integrated.shellArgs.${platformKey}`);
 
 		// Check if workspace setting exists and whether it's whitelisted
 		let isWorkspaceShellAllowed = false;

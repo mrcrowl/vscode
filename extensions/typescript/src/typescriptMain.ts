@@ -33,7 +33,10 @@ import TypingsStatus, { AtaProgressReporter } from './utils/typingsStatus';
 import VersionStatus from './utils/versionStatus';
 import { getContributedTypeScriptServerPlugins, TypeScriptServerPlugin } from './utils/plugins';
 import { openOrCreateConfigFile, isImplicitProjectConfigFile } from './utils/tsconfig';
+
 import CompileOnSaveSupport from "./features/compileOnSaveSupport";
+import { tsLocationToVsPosition } from './utils/convert';
+import FormattingConfigurationManager from './features/formattingConfigurationManager';
 
 interface LanguageDescription {
     id: string;
@@ -178,6 +181,7 @@ class LanguageProvider {
     private syntaxDiagnostics: ObjectMap<Diagnostic[]>;
     private readonly currentDiagnostics: DiagnosticCollection;
     private readonly bufferSyncSupport: BufferSyncSupport;
+    private readonly formattingOptionsManager: FormattingConfigurationManager;
 
     private readonly typingsStatus: TypingsStatus;
     private readonly ataProgressReporter: AtaProgressReporter;
@@ -194,6 +198,7 @@ class LanguageProvider {
         private readonly client: TypeScriptServiceClient,
         private readonly description: LanguageDescription
     ) {
+        this.formattingOptionsManager = new FormattingConfigurationManager(client);
         this.bufferSyncSupport = new BufferSyncSupport(client, description.modeIds, {
             delete: (file: string) => {
                 this.currentDiagnostics.delete(client.asUrl(file));
@@ -201,10 +206,10 @@ class LanguageProvider {
         }, this._validate);
         this.syntaxDiagnostics = Object.create(null);
         this.currentDiagnostics = languages.createDiagnosticCollection(description.id);
-
         if (description.supportsCompileOnSave) {
             this.compileOnSaveSupport = new CompileOnSaveSupport(client, description.modeIds);
         }
+
         this.typingsStatus = new TypingsStatus(client);
         this.ataProgressReporter = new AtaProgressReporter(client);
 
@@ -248,15 +253,15 @@ class LanguageProvider {
         const selector = this.description.modeIds;
         const config = workspace.getConfiguration(this.id);
 
-        const completionItemProvider = new (await import('./features/completionItemProvider')).default(client, this.typingsStatus);
+        const completionItemProvider = new (await import('./features/completionItemProvider')).default(client, this.description.id, this.typingsStatus);
         completionItemProvider.updateConfiguration();
         this.toUpdateOnConfigurationChanged.push(completionItemProvider);
-        this.disposables.push(languages.registerCompletionItemProvider(selector, completionItemProvider, '.'));
+        this.disposables.push(languages.registerCompletionItemProvider(selector, completionItemProvider, '.', '"', '\'', '/', '@'));
 
         this.disposables.push(languages.registerCompletionItemProvider(selector, new (await import('./features/directiveCommentCompletionProvider')).default(client), '@'));
 
         const { TypeScriptFormattingProvider, FormattingProviderManager } = await import('./features/formattingProvider');
-        const formattingProvider = new TypeScriptFormattingProvider(client);
+        const formattingProvider = new TypeScriptFormattingProvider(client, this.formattingOptionsManager);
         formattingProvider.updateConfiguration(config);
         this.disposables.push(languages.registerOnTypeFormattingEditProvider(selector, formattingProvider, ';', '}', '\n'));
 
@@ -276,10 +281,9 @@ class LanguageProvider {
         this.disposables.push(languages.registerDocumentSymbolProvider(selector, new (await import('./features/documentSymbolProvider')).default(client)));
         this.disposables.push(languages.registerSignatureHelpProvider(selector, new (await import('./features/signatureHelpProvider')).default(client), '(', ','));
         this.disposables.push(languages.registerRenameProvider(selector, new (await import('./features/renameProvider')).default(client)));
-        this.disposables.push(languages.registerCodeActionsProvider(selector, new (await import('./features/codeActionProvider')).default(client, this.description.id)));
-        this.disposables.push(languages.registerCodeActionsProvider(selector, new (await import('./features/refactorProvider')).default(client, this.description.id)));
+        this.disposables.push(languages.registerCodeActionsProvider(selector, new (await import('./features/codeActionProvider')).default(client, this.formattingOptionsManager, this.description.id)));
+        this.disposables.push(languages.registerCodeActionsProvider(selector, new (await import('./features/refactorProvider')).default(client, this.formattingOptionsManager, this.description.id)));
         this.registerVersionDependentProviders();
-        /// >>>>>>> 1.12.2
 
         for (const modeId of this.description.modeIds) {
             this.disposables.push(languages.registerWorkspaceSymbolProvider(new (await import('./features/workspaceSymbolProvider')).default(client, modeId)));
@@ -336,6 +340,7 @@ class LanguageProvider {
     private configurationChanged(): void {
         const config = workspace.getConfiguration(this.id);
         this.updateValidate(config.get(validateSetting, true));
+        this.formattingOptionsManager.updateConfiguration(config);
 
         for (const toUpdate of this.toUpdateOnConfigurationChanged) {
             toUpdate.updateConfiguration();
@@ -702,11 +707,13 @@ class TypeScriptServiceClientHost implements ITypescriptServiceClientHost {
         const result: Diagnostic[] = [];
         for (let diagnostic of diagnostics) {
             const { start, end, text } = diagnostic;
-            const range = new Range(start.line - 1, start.offset - 1, end.line - 1, end.offset - 1);
+            const range = new Range(tsLocationToVsPosition(start), tsLocationToVsPosition(end));
             const converted = new Diagnostic(range, text);
             converted.severity = this.getDiagnosticSeverity(diagnostic);
             converted.source = diagnostic.source || source;
-            converted.code = '' + diagnostic.code;
+            if (diagnostic.code) {
+                converted.code = diagnostic.code;
+            }
             result.push(converted);
         }
         return result;

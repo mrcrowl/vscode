@@ -17,8 +17,8 @@
     "vscode-nls": "2.0.1"
   },
   "devDependencies": {
-    "@types/node": "^7.0.4",
-    "@types/semver": "^5.3.30"
+    "@types/node": "8.0.33",
+    "@types/semver": "5.4.0"
   },
   "scripts": {
     "vscode:prepublish": "node ../../node_modules/gulp/bin/gulp.js --gulpfile ../../build/gulpfile.extensions.js compile-extension:typescript ./tsconfig.json",
@@ -77,7 +77,9 @@
         "path": "./syntaxes/TypeScriptReact.tmLanguage.json",
         "embeddedLanguages": {
           "meta.tag.tsx": "jsx-tags",
-          "meta.tag.without-attributes.tsx": "jsx-tags"
+          "meta.tag.without-attributes.tsx": "jsx-tags",
+          "meta.tag.attributes.tsx": "typescriptreact",
+          "meta.embedded.expression.tsx": "typescriptreact"
         }
       }
     ],
@@ -385,10 +387,27 @@
           "default": "on",
           "enum": [
             "on",
-            "off"
+            "off",
+            "build",
+            "watch"
           ],
           "description": "%typescript.tsc.autoDetect%",
           "scope": "resource"
+        },
+        "typescript.quickSuggestionsForPaths": {
+          "type": "boolean",
+          "default": true,
+          "description": "%typescript.quickSuggestionsForPaths%",
+          "scope": "resource"
+        },
+        "typescript.locale": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "%typescript.locale%",
+          "scope": "window"
         }
       }
     },
@@ -515,6 +534,9 @@
           "tsconfig": {
             "type": "string",
             "description": "The tsconfig file that defines the TS build"
+          },
+          "option": {
+            "type": "string"
           }
         }
       }

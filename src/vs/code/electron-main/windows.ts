@@ -19,7 +19,7 @@ import { IPathWithLineAndColumn, parseLineAndColumnAware } from 'vs/code/node/pa
 import { ILifecycleService, UnloadReason, IWindowUnloadEvent } from 'vs/platform/lifecycle/electron-main/lifecycleMain';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { ILogService } from 'vs/platform/log/common/log';
-import { IWindowSettings, OpenContext, IPath, IWindowConfiguration, INativeOpenDialogOptions, ReadyState, IPathsToWaitFor } from 'vs/platform/windows/common/windows';
+import { IWindowSettings, OpenContext, IPath, IWindowConfiguration, INativeOpenDialogOptions, ReadyState, IPathsToWaitFor, IEnterWorkspaceResult } from 'vs/platform/windows/common/windows';
 import { getLastActiveWindow, findBestWindowOrFolderForFile, findWindowOnWorkspace, findWindowOnExtensionDevelopmentPath, findWindowOnWorkspaceOrFolderPath } from 'vs/code/node/windowsFinder';
 import CommonEvent, { Emitter } from 'vs/base/common/event';
 import product from 'vs/platform/node/product';
@@ -32,6 +32,8 @@ import { TPromise } from 'vs/base/common/winjs.base';
 import { IWorkspacesMainService, IWorkspaceIdentifier, ISingleFolderWorkspaceIdentifier, WORKSPACE_FILTER, isSingleFolderWorkspaceIdentifier } from 'vs/platform/workspaces/common/workspaces';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { mnemonicButtonLabel } from 'vs/base/common/labels';
+import { Schemas } from 'vs/base/common/network';
+import { normalizeNFC } from 'vs/base/common/strings';
 
 enum WindowError {
 	UNRESPONSIVE,
@@ -360,7 +362,7 @@ export class WindowsManager implements IWindowsMainService {
 		// When run with --add, take the folders that are to be opened as
 		// folders that should be added to the currently active window.
 		let foldersToAdd: IPath[] = [];
-		if (openConfig.addMode && product.quality !== 'stable') { // TODO@Ben multi root
+		if (openConfig.addMode) {
 			foldersToAdd = pathsToOpen.filter(path => !!path.folderPath).map(path => ({ filePath: path.folderPath }));
 			pathsToOpen = pathsToOpen.filter(path => !path.folderPath);
 		}
@@ -418,24 +420,42 @@ export class WindowsManager implements IWindowsMainService {
 		// Open based on config
 		const usedWindows = this.doOpen(openConfig, workspacesToOpen, workspacesToRestore, foldersToOpen, foldersToRestore, emptyToRestore, emptyToOpen, filesToOpen, filesToCreate, filesToDiff, filesToWait, foldersToAdd);
 
-		// Make sure to pass focus to one of the windows if we open multiple
+		// Make sure to pass focus to the most relevant of the windows if we open multiple
 		if (usedWindows.length > 1) {
-			let focusLast = true;
+			let focusLastActive = this.windowsState.lastActiveWindow && !openConfig.forceEmpty && !openConfig.cli._.length && (!openConfig.pathsToOpen || !openConfig.pathsToOpen.length);
+			let focusLastOpened = true;
+			let focusLastWindow = true;
 
-			// Only focus the last active window if the user did not open a specific path via
-			// CLI or API. In those cases we do not want windows to get focus from previous
-			// session but actually one of the windows the user explicitly asked to open.
-			const focusLastActive = !openConfig.forceEmpty && !openConfig.cli._.length && (!openConfig.pathsToOpen || !openConfig.pathsToOpen.length);
-			if (focusLastActive && this.windowsState.lastActiveWindow) {
+			// 1.) focus last active window if we are not instructed to open any paths
+			if (focusLastActive) {
 				const lastActiveWindw = usedWindows.filter(w => w.backupPath === this.windowsState.lastActiveWindow.backupPath);
 				if (lastActiveWindw.length) {
 					lastActiveWindw[0].focus();
-					focusLast = false;
+					focusLastOpened = false;
+					focusLastWindow = false;
 				}
 			}
 
-			// Otherwise: focus last window we opened
-			if (focusLast) {
+			// 2.) if instructed to open paths, focus last window which is not restored
+			if (focusLastOpened) {
+				for (let i = usedWindows.length - 1; i >= 0; i--) {
+					const usedWindow = usedWindows[i];
+					if (
+						(usedWindow.openedWorkspace && workspacesToRestore.some(workspace => workspace.id === usedWindow.openedWorkspace.id)) || 	// skip over restored workspace
+						(usedWindow.openedFolderPath && foldersToRestore.some(folder => folder === usedWindow.openedFolderPath)) ||					// skip over restored folder
+						(usedWindow.backupPath && emptyToRestore.some(empty => empty === basename(usedWindow.backupPath)))							// skip over restored empty window
+					) {
+						continue;
+					}
+
+					usedWindow.focus();
+					focusLastWindow = false;
+					break;
+				}
+			}
+
+			// 3.) finally, always ensure to have at least last used window focused
+			if (focusLastWindow) {
 				usedWindows[usedWindows.length - 1].focus();
 			}
 		}
@@ -513,7 +533,7 @@ export class WindowsManager implements IWindowsMainService {
 
 			// Find suitable window or folder path to open files in
 			const fileToCheck = filesToOpen[0] || filesToCreate[0] || filesToDiff[0];
-			const bestWindowOrFolder = findBestWindowOrFolderForFile({
+			let bestWindowOrFolder = findBestWindowOrFolderForFile({
 				windows: WindowsManager.WINDOWS,
 				newWindow: openFilesInNewWindow,
 				reuseWindow: openConfig.forceReuseWindow,
@@ -522,6 +542,12 @@ export class WindowsManager implements IWindowsMainService {
 				userHome: this.environmentService.userHome,
 				workspaceResolver: workspace => this.workspacesService.resolveWorkspaceSync(workspace.configPath)
 			});
+
+			// Special case: we started with --wait and we got back a folder to open. In this case
+			// we actually prefer to not open the folder but operate purely on the file.
+			if (typeof bestWindowOrFolder === 'string' && filesToWait) {
+				bestWindowOrFolder = !openFilesInNewWindow ? this.getLastActiveWindow() : null;
+			}
 
 			// We found a window to open the files in
 			if (bestWindowOrFolder instanceof CodeWindow) {
@@ -766,7 +792,7 @@ export class WindowsManager implements IWindowsMainService {
 		// This will ensure to open these folders in one window instead of multiple
 		// If we are in addMode, we should not do this because in that case all
 		// folders should be added to the existing window.
-		if (!openConfig.addMode && isCommandLineOrAPICall && product.quality !== 'stable') { // TODO@Ben multi root
+		if (!openConfig.addMode && isCommandLineOrAPICall) {
 			const foldersToOpen = windowsToOpen.filter(path => !!path.folderPath);
 			if (foldersToOpen.length > 1) {
 				const workspace = this.workspacesService.createWorkspaceSync(foldersToOpen.map(folder => folder.folderPath));
@@ -911,7 +937,7 @@ export class WindowsManager implements IWindowsMainService {
 			restoreWindows = ((windowConfig && windowConfig.restoreWindows) || 'one') as RestoreWindowsSetting;
 
 			if (restoreWindows === 'one' /* default */ && windowConfig && windowConfig.reopenFolders) {
-				restoreWindows = windowConfig.reopenFolders; // TODO@Ben migration
+				restoreWindows = windowConfig.reopenFolders; // TODO@Ben migration from deprecated window.reopenFolders setting
 			}
 
 			if (['all', 'folders', 'one', 'none'].indexOf(restoreWindows) === -1) {
@@ -1294,19 +1320,28 @@ export class WindowsManager implements IWindowsMainService {
 		});
 	}
 
-	public saveAndOpenWorkspace(win: CodeWindow, path: string): TPromise<void> {
-		return this.workspacesManager.saveAndOpenWorkspace(win, path);
+	public saveAndEnterWorkspace(win: CodeWindow, path: string): TPromise<IEnterWorkspaceResult> {
+		return this.workspacesManager.saveAndEnterWorkspace(win, path).then(result => this.doEnterWorkspace(win, result));
 	}
 
-	public createAndOpenWorkspace(win: CodeWindow, folders?: string[], path?: string): TPromise<void> {
-		return this.workspacesManager.createAndOpenWorkspace(win, folders, path);
+	public createAndEnterWorkspace(win: CodeWindow, folderPaths?: string[], path?: string): TPromise<IEnterWorkspaceResult> {
+		return this.workspacesManager.createAndEnterWorkspace(win, folderPaths, path).then(result => this.doEnterWorkspace(win, result));
+	}
+
+	private doEnterWorkspace(win: CodeWindow, result: IEnterWorkspaceResult): IEnterWorkspaceResult {
+
+		// Mark as recently opened
+		this.historyService.addRecentlyOpened([result.workspace], []);
+
+		// Trigger Eevent to indicate load of workspace into window
+		this._onWindowReady.fire(win);
+
+		return result;
 	}
 
 	public openWorkspace(win?: CodeWindow): void {
 		this.workspacesManager.openWorkspace(win);
 	}
-
-
 
 	private onBeforeWindowUnload(e: IWindowUnloadEvent): void {
 		const windowClosing = (e.reason === UnloadReason.CLOSE);
@@ -1562,6 +1597,7 @@ class FileDialog {
 
 			// Telemetry
 			if (options.telemetryEventName) {
+				// __GDPR__TODO__ Dynamic event names and dynamic properties. Can not be registered statically.
 				this.telemetryService.publicLog(options.telemetryEventName, {
 					...options.telemetryExtraData,
 					outcome: numberOfPaths ? 'success' : 'canceled',
@@ -1615,6 +1651,9 @@ class FileDialog {
 		const focusedWindow = this.windowsMainService.getWindowById(options.windowId) || this.windowsMainService.getFocusedWindow();
 		dialog.showOpenDialog(focusedWindow && focusedWindow.win, options.dialogOptions, paths => {
 			if (paths && paths.length > 0) {
+				if (isMacintosh) {
+					paths = paths.map(path => normalizeNFC(path)); // normalize paths returned from the OS
+				}
 
 				// Remember path in storage for next time
 				this.storageService.setItem(FileDialog.workingDirPickerStorageKey, dirname(paths[0]));
@@ -1639,7 +1678,7 @@ class WorkspacesManager {
 	) {
 	}
 
-	public saveAndOpenWorkspace(window: CodeWindow, path: string): TPromise<void> {
+	public saveAndEnterWorkspace(window: CodeWindow, path: string): TPromise<IEnterWorkspaceResult> {
 		if (!window || !window.win || window.readyState !== ReadyState.READY || !window.openedWorkspace || !path || !this.isValidTargetWorkspacePath(window, path)) {
 			return TPromise.as(null); // return early if the window is not ready or disposed or does not have a workspace
 		}
@@ -1647,12 +1686,12 @@ class WorkspacesManager {
 		return this.doSaveAndOpenWorkspace(window, window.openedWorkspace, path);
 	}
 
-	public createAndOpenWorkspace(window: CodeWindow, folders?: string[], path?: string): TPromise<void> {
+	public createAndEnterWorkspace(window: CodeWindow, folderPaths?: string[], path?: string): TPromise<IEnterWorkspaceResult> {
 		if (!window || !window.win || window.readyState !== ReadyState.READY || !this.isValidTargetWorkspacePath(window, path)) {
 			return TPromise.as(null); // return early if the window is not ready or disposed
 		}
 
-		return this.workspacesService.createWorkspace(folders).then(workspace => {
+		return this.workspacesService.createWorkspace(folderPaths).then(workspace => {
 			return this.doSaveAndOpenWorkspace(window, workspace, path);
 		});
 	}
@@ -1690,7 +1729,7 @@ class WorkspacesManager {
 		return true; // OK
 	}
 
-	private doSaveAndOpenWorkspace(window: CodeWindow, workspace: IWorkspaceIdentifier, path?: string): TPromise<void> {
+	private doSaveAndOpenWorkspace(window: CodeWindow, workspace: IWorkspaceIdentifier, path?: string): TPromise<IEnterWorkspaceResult> {
 		let savePromise: TPromise<IWorkspaceIdentifier>;
 		if (path) {
 			savePromise = this.workspacesService.saveWorkspace(workspace, path);
@@ -1701,26 +1740,18 @@ class WorkspacesManager {
 		return savePromise.then(workspace => {
 			window.focus();
 
-			// Only open workspace when the window has not vetoed this
-			return this.lifecycleService.unload(window, UnloadReason.RELOAD, workspace).done(veto => {
-				if (!veto) {
+			// Register window for backups and migrate current backups over
+			let backupPath: string;
+			if (!window.config.extensionDevelopmentPath) {
+				backupPath = this.backupService.registerWorkspaceBackupSync(workspace, window.config.backupPath);
+			}
 
-					// Register window for backups and migrate current backups over
-					let backupPath: string;
-					if (window.config && !window.config.extensionDevelopmentPath) {
-						backupPath = this.backupService.registerWorkspaceBackupSync(workspace, window.config.backupPath);
-					}
+			// Update window configuration properly based on transition to workspace
+			window.config.folderPath = void 0;
+			window.config.workspace = workspace;
+			window.config.backupPath = backupPath;
 
-					// Craft a new window configuration to use for the transition
-					const configuration: IWindowConfiguration = mixin({}, window.config);
-					configuration.folderPath = void 0;
-					configuration.workspace = workspace;
-					configuration.backupPath = backupPath;
-
-					// Reload
-					window.reload(configuration);
-				}
-			});
+			return { workspace, backupPath };
 		});
 	}
 
@@ -1795,7 +1826,7 @@ class WorkspacesManager {
 
 			// Save: save workspace, but do not veto unload
 			case ConfirmResult.SAVE: {
-				const target = dialog.showSaveDialog(e.window.win, {
+				let target = dialog.showSaveDialog(e.window.win, {
 					buttonLabel: mnemonicButtonLabel(localize({ key: 'save', comment: ['&& denotes a mnemonic'] }, "&&Save")),
 					title: localize('saveWorkspace', "Save Workspace"),
 					filters: WORKSPACE_FILTER,
@@ -1803,6 +1834,10 @@ class WorkspacesManager {
 				});
 
 				if (target) {
+					if (isMacintosh) {
+						target = normalizeNFC(target); // normalize paths returned from the OS
+					}
+
 					e.veto(this.workspacesService.saveWorkspace(workspace, target).then(() => false, () => false));
 				} else {
 					e.veto(true); // keep veto if no target was provided
@@ -1812,18 +1847,20 @@ class WorkspacesManager {
 	}
 
 	private getWorkspaceDialogDefaultPath(workspace?: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier): string {
-		let defaultPath: string;
 		if (workspace) {
 			if (isSingleFolderWorkspaceIdentifier(workspace)) {
-				defaultPath = dirname(workspace);
-			} else {
-				const resolvedWorkspace = this.workspacesService.resolveWorkspaceSync(workspace.configPath);
-				if (resolvedWorkspace && resolvedWorkspace.folders.length > 0) {
-					defaultPath = dirname(resolvedWorkspace.folders[0].path);
+				return dirname(workspace);
+			}
+
+			const resolvedWorkspace = this.workspacesService.resolveWorkspaceSync(workspace.configPath);
+			if (resolvedWorkspace && resolvedWorkspace.folders.length > 0) {
+				for (const folder of resolvedWorkspace.folders) {
+					if (folder.uri.scheme === Schemas.file) {
+						return dirname(folder.uri.fsPath);
+					}
 				}
 			}
 		}
-
-		return defaultPath;
+		return void 0;
 	}
 }

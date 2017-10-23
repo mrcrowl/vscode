@@ -4,36 +4,32 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { SpectronApplication } from '../../spectron/application';
-import { Element } from 'webdriverio';
 
 export enum ActivityBarPosition {
 	LEFT = 0,
 	RIGHT = 1
 };
 
+const SEARCH_INPUT = '.settings-search-input input';
+const EDITOR = '.editable-preferences-editor-container .monaco-editor textarea';
+
 export class SettingsEditor {
 
-	constructor(private spectron: SpectronApplication) {
-		// noop
-	}
+	constructor(private spectron: SpectronApplication) { }
 
-	public async openUserSettings(): Promise<Element> {
-		await this.spectron.command('workbench.action.openGlobalSettings');
-		return this.spectron.client.waitForElement('.settings-search-input input:focus');
-	}
+	async addUserSetting(setting: string, value: string): Promise<void> {
+		await this.spectron.runCommand('workbench.action.openGlobalSettings');
+		await this.spectron.client.waitForActiveElement(SEARCH_INPUT);
 
-	public async focusEditableSettings(): Promise<void> {
-		await this.spectron.client.keys(['ArrowDown', 'NULL'], false);
-		await this.spectron.client.waitForElement(`.editable-preferences-editor-container .monaco-editor.focused`);
-		await this.spectron.client.keys(['ArrowRight', 'NULL'], false);
-	}
+		await this.spectron.client.keys(['ArrowDown', 'NULL']);
+		await this.spectron.client.waitForActiveElement(EDITOR);
 
-	public async addUserSetting(setting: string, value: string): Promise<void> {
-		await this.openUserSettings();
+		await this.spectron.client.keys(['ArrowRight', 'NULL']);
+		await this.spectron.screenCapturer.capture('user settings is open and focused');
 
-		// await this.spectron.wait(1);
-		await this.focusEditableSettings();
-		await this.spectron.client.keys(`"${setting}": ${value}`);
+		await this.spectron.workbench.editor.waitForTypeInEditor('settings.json', `"${setting}": ${value}`, '.editable-preferences-editor-container');
 		await this.spectron.workbench.saveOpenedFile();
+
+		await this.spectron.screenCapturer.capture('user settings has changed');
 	}
 }

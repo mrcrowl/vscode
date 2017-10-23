@@ -139,7 +139,14 @@ export function expandEmmetAbbreviation(args): Thenable<boolean> {
 		return [new vscode.Range(abbreviationRange.start.line, abbreviationRange.start.character, abbreviationRange.end.line, abbreviationRange.end.character), abbreviation, filter];
 	};
 
-	editor.selections.forEach(selection => {
+	let selectionsInReverseOrder = editor.selections.slice(0);
+	selectionsInReverseOrder.sort((a, b) => {
+		var posA = a.isReversed ? a.anchor : a.active;
+		var posB = b.isReversed ? b.anchor : b.active;
+		return posA.compareTo(posB) * -1;
+	});
+
+	selectionsInReverseOrder.forEach(selection => {
 		let position = selection.isReversed ? selection.anchor : selection.active;
 		let [rangeToReplace, abbreviation, filter] = getAbbreviation(editor.document, selection, position, syntax);
 		if (!rangeToReplace) {
@@ -149,7 +156,7 @@ export function expandEmmetAbbreviation(args): Thenable<boolean> {
 			return;
 		}
 
-		let currentNode = getNode(rootNode, position);
+		let currentNode = getNode(rootNode, position, true);
 		if (!isValidLocationForEmmetAbbreviation(currentNode, syntax, position)) {
 			return;
 		}
@@ -189,7 +196,6 @@ export function isValidLocationForEmmetAbbreviation(currentNode: Node, syntax: s
 	}
 
 	if (isStyleSheet(syntax)) {
-
 		// If current node is a rule or at-rule, then perform additional checks to ensure
 		// emmet suggestions are not provided in the rule selector
 		if (currentNode.type !== 'rule' && currentNode.type !== 'at-rule') {

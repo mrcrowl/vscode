@@ -4,12 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Application, SpectronClient as WebClient } from 'spectron';
+import { test as testPort } from 'portastic';
 import { SpectronClient } from './client';
 import { ScreenCapturer } from '../helpers/screenshot';
 import { Workbench } from '../areas/workbench/workbench';
 import * as fs from 'fs';
 import * as cp from 'child_process';
 import * as path from 'path';
+import * as mkdirp from 'mkdirp';
+import { sanitize } from '../helpers/utilities';
 
 export const LATEST_PATH = process.env.VSCODE_PATH as string;
 export const STABLE_PATH = process.env.VSCODE_STABLE_PATH || '';
@@ -18,7 +21,8 @@ export const CODE_WORKSPACE_PATH = process.env.VSCODE_WORKSPACE_PATH as string;
 export const USER_DIR = process.env.VSCODE_USER_DIR as string;
 export const EXTENSIONS_DIR = process.env.VSCODE_EXTENSIONS_DIR as string;
 export const VSCODE_EDITION = process.env.VSCODE_EDITION as string;
-export const SCREENSHOTS_DIR = process.env.SCREENSHOTS_DIR as string;
+export const ARTIFACTS_DIR = process.env.ARTIFACTS_DIR as string;
+export const WAIT_TIME = parseInt(process.env.WAIT_TIME as string);
 
 export enum VSCODE_BUILD {
 	DEV,
@@ -26,21 +30,39 @@ export enum VSCODE_BUILD {
 	STABLE
 }
 
+// Just hope random helps us here, cross your fingers!
+export async function findFreePort(): Promise<number> {
+	for (let i = 0; i < 10; i++) {
+		const port = 10000 + Math.round(Math.random() * 10000);
+
+		if (await testPort(port)) {
+			return port;
+		}
+	}
+
+	throw new Error('Could not find free port!');
+}
+
 /**
  * Wraps Spectron's Application instance with its used methods.
  */
 export class SpectronApplication {
 
+	private static count = 0;
+
 	private _client: SpectronClient;
 	private _workbench: Workbench;
 	private _screenCapturer: ScreenCapturer;
 	private spectron: Application;
-	private keybindings: any[];
+	private keybindings: any[]; private stopLogCollection: (() => Promise<void>) | undefined;
 
-	constructor(private _electronPath: string = LATEST_PATH, private _workspace: string = WORKSPACE_PATH, private _userDir: string = USER_DIR) {
-	}
+	constructor(
+		private _electronPath: string = LATEST_PATH,
+		private _workspace: string = WORKSPACE_PATH,
+		private _userDir: string = USER_DIR
+	) { }
 
-	public get build(): VSCODE_BUILD {
+	get build(): VSCODE_BUILD {
 		switch (VSCODE_EDITION) {
 			case 'dev':
 				return VSCODE_BUILD.DEV;
@@ -50,54 +72,55 @@ export class SpectronApplication {
 		return VSCODE_BUILD.STABLE;
 	}
 
-	public get app(): Application {
+	get app(): Application {
 		return this.spectron;
 	}
 
-	public get client(): SpectronClient {
+	get client(): SpectronClient {
 		return this._client;
 	}
 
-	public get webclient(): WebClient {
+	get webclient(): WebClient {
 		return this.spectron.client;
 	}
 
-	public get screenCapturer(): ScreenCapturer {
+	get screenCapturer(): ScreenCapturer {
 		return this._screenCapturer;
 	}
 
-	public get workbench(): Workbench {
+	get workbench(): Workbench {
 		return this._workbench;
 	}
 
-	public async start(testSuiteName: string, codeArgs: string[] = []): Promise<any> {
+	async start(testSuiteName: string, codeArgs: string[] = [], env = process.env): Promise<any> {
 		await this.retrieveKeybindings();
 		cp.execSync('git checkout .', { cwd: WORKSPACE_PATH });
-		await this.startApplication(testSuiteName, codeArgs);
+		await this.startApplication(testSuiteName, codeArgs, env);
 		await this.checkWindowReady();
 		await this.waitForWelcome();
 		await this.screenCapturer.capture('Application started');
 	}
 
-	public async reload(): Promise<any> {
+	async reload(): Promise<any> {
 		await this.workbench.quickopen.runCommand('Reload Window');
 		// TODO @sandy: Find a proper condition to wait for reload
-		await this.wait(.5);
+		await new Promise(c => setTimeout(c, 500));
 		await this.checkWindowReady();
 	}
 
-	public async stop(): Promise<any> {
+	async stop(): Promise<any> {
+		if (this.stopLogCollection) {
+			await this.stopLogCollection();
+			this.stopLogCollection = undefined;
+		}
+
 		if (this.spectron && this.spectron.isRunning()) {
 			await this.screenCapturer.capture('Stopping application');
-			return await this.spectron.stop();
+			await this.spectron.stop();
 		}
 	}
 
-	public wait(seconds: number = 1): Promise<any> {
-		return new Promise(resolve => setTimeout(resolve, seconds * 1000));
-	}
-
-	private async startApplication(testSuiteName: string, codeArgs: string[] = []): Promise<any> {
+	private async startApplication(testSuiteName: string, codeArgs: string[] = [], env = process.env): Promise<any> {
 
 		let args: string[] = [];
 		let chromeDriverArgs: string[] = [];
@@ -107,25 +130,100 @@ export class SpectronApplication {
 		}
 
 		args.push(this._workspace);
+
 		// Prevent 'Getting Started' web page from opening on clean user-data-dir
 		args.push('--skip-getting-started');
+
+		// Prevent Quick Open from closing when focus is stolen, this allows concurrent smoketest suite running
+		args.push('--sticky-quickopen');
+
+		// Disable telemetry
+		args.push('--disable-telemetry');
+
+		// Disable updates
+		args.push('--disable-updates');
+
 		// Ensure that running over custom extensions directory, rather than picking up the one that was used by a tester previously
 		args.push(`--extensions-dir=${EXTENSIONS_DIR}`);
 
 		args.push(...codeArgs);
 
-		chromeDriverArgs.push(`--user-data-dir=${path.join(this._userDir, new Date().getTime().toString())}`);
+		const id = String(SpectronApplication.count++);
+		chromeDriverArgs.push(`--user-data-dir=${path.join(this._userDir, id)}`);
 
-		this.spectron = new Application({
+		// Spectron always uses the same port number for the chrome driver
+		// and it handles gracefully when two instances use the same port number
+		// This works, but when one of the instances quits, it takes down
+		// chrome driver with it, leaving the other instance in DISPAIR!!! :(
+		const port = await findFreePort();
+		const opts: any = {
 			path: this._electronPath,
+			port,
 			args,
+			env,
 			chromeDriverArgs,
 			startTimeout: 10000,
 			requireName: 'nodeRequire'
-		});
+		};
+
+		let testsuiteRootPath: string | undefined = undefined;
+		let screenshotsDirPath: string | undefined = undefined;
+
+		if (ARTIFACTS_DIR) {
+			testsuiteRootPath = path.join(ARTIFACTS_DIR, sanitize(testSuiteName));
+			mkdirp.sync(testsuiteRootPath);
+
+			// Collect screenshots
+			screenshotsDirPath = path.join(testsuiteRootPath, 'screenshots');
+			mkdirp.sync(screenshotsDirPath);
+
+			// Collect chromedriver logs
+			const chromedriverLogPath = path.join(testsuiteRootPath, 'chromedriver.log');
+			opts.chromeDriverLogPath = chromedriverLogPath;
+
+			// Collect webdriver logs
+			const webdriverLogsPath = path.join(testsuiteRootPath, 'webdriver');
+			mkdirp.sync(webdriverLogsPath);
+			opts.webdriverLogPath = webdriverLogsPath;
+		}
+
+		this.spectron = new Application(opts);
 		await this.spectron.start();
 
-		this._screenCapturer = new ScreenCapturer(this.spectron, testSuiteName);
+		if (testsuiteRootPath) {
+			// Collect logs
+			const mainProcessLogPath = path.join(testsuiteRootPath, 'main.log');
+			const rendererProcessLogPath = path.join(testsuiteRootPath, 'renderer.log');
+
+			const flush = async () => {
+				const mainLogs = await this.spectron.client.getMainProcessLogs();
+				await new Promise((c, e) => fs.appendFile(mainProcessLogPath, mainLogs.join('\n'), { encoding: 'utf8' }, err => err ? e(err) : c()));
+
+				const rendererLogs = (await this.spectron.client.getRenderProcessLogs()).map(m => `${m.timestamp} - ${m.level} - ${m.message}`);
+				await new Promise((c, e) => fs.appendFile(rendererProcessLogPath, rendererLogs.join('\n'), { encoding: 'utf8' }, err => err ? e(err) : c()));
+			};
+
+			let running = true;
+			const loopFlush = async () => {
+				while (true) {
+					await flush();
+
+					if (!running) {
+						return;
+					}
+
+					await new Promise(c => setTimeout(c, 1000));
+				}
+			};
+
+			const loopPromise = loopFlush();
+			this.stopLogCollection = () => {
+				running = false;
+				return loopPromise;
+			};
+		}
+
+		this._screenCapturer = new ScreenCapturer(this.spectron, screenshotsDirPath);
 		this._client = new SpectronClient(this.spectron, this);
 		this._workbench = new Workbench(this);
 	}
@@ -135,7 +233,7 @@ export class SpectronApplication {
 		// Spectron opens multiple terminals in Windows platform
 		// Workaround to focus the right window - https://github.com/electron/spectron/issues/60
 		await this.client.windowByIndex(1);
-		await this.app.browserWindow.focus();
+		// await this.app.browserWindow.focus();
 		await this.client.waitForHTML('[id="workbench.main.container"]');
 	}
 
@@ -164,7 +262,7 @@ export class SpectronApplication {
 	 * Retrieves the command from keybindings file and executes it with WebdriverIO client API
 	 * @param command command (e.g. 'workbench.action.files.newUntitledFile')
 	 */
-	public command(command: string, capture?: boolean): Promise<any> {
+	runCommand(command: string): Promise<any> {
 		const binding = this.keybindings.find(x => x['command'] === command);
 		if (!binding) {
 			return this.workbench.quickopen.runCommand(command);
@@ -180,7 +278,7 @@ export class SpectronApplication {
 			keysToPress.push('NULL');
 		});
 
-		return this.client.keys(keysToPress, capture);
+		return this.client.keys(keysToPress);
 	}
 
 	/**

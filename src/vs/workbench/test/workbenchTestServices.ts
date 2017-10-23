@@ -15,7 +15,7 @@ import URI from 'vs/base/common/uri';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { NullTelemetryService } from 'vs/platform/telemetry/common/telemetryUtils';
 import { StorageService, InMemoryLocalStorage } from 'vs/platform/storage/common/storageService';
-import { IEditorGroup, ConfirmResult } from 'vs/workbench/common/editor';
+import { IEditorGroup, ConfirmResult, IEditorOpeningEvent } from 'vs/workbench/common/editor';
 import Event, { Emitter } from 'vs/base/common/event';
 import Severity from 'vs/base/common/severity';
 import { IBackupFileService } from 'vs/workbench/services/backup/common/backup';
@@ -24,10 +24,10 @@ import { IStorageService, StorageScope } from 'vs/platform/storage/common/storag
 import { IPartService, Parts } from 'vs/workbench/services/part/common/partService';
 import { TextModelResolverService } from 'vs/workbench/services/textmodelResolver/common/textModelResolverService';
 import { ITextModelService } from 'vs/editor/common/services/resolverService';
-import { IEditorInput, IEditorOptions, Position, Direction, IEditor, IResourceInput, ITextEditorSelection } from 'vs/platform/editor/common/editor';
+import { IEditorInput, IEditorOptions, Position, Direction, IEditor, IResourceInput } from 'vs/platform/editor/common/editor';
 import { IUntitledEditorService, UntitledEditorService } from 'vs/workbench/services/untitled/common/untitledEditorService';
-import { IMessageService, IConfirmation } from 'vs/platform/message/common/message';
-import { IWorkspaceContextService, IWorkspace as IWorkbenchWorkspace, WorkbenchState } from 'vs/platform/workspace/common/workspace';
+import { IMessageService, IConfirmation, IConfirmationResult, IChoiceService } from 'vs/platform/message/common/message';
+import { IWorkspaceContextService, IWorkspace as IWorkbenchWorkspace, WorkbenchState, IWorkspaceFolder, IWorkspaceFoldersChangeEvent } from 'vs/platform/workspace/common/workspace';
 import { ILifecycleService, ShutdownEvent, ShutdownReason, StartupKind, LifecyclePhase } from 'vs/platform/lifecycle/common/lifecycle';
 import { EditorStacksModel } from 'vs/workbench/common/editor/editorStacksModel';
 import { ServiceCollection } from 'vs/platform/instantiation/common/serviceCollection';
@@ -44,9 +44,9 @@ import { EnvironmentService } from 'vs/platform/environment/node/environmentServ
 import { IModeService } from 'vs/editor/common/services/modeService';
 import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { IHistoryService } from 'vs/workbench/services/history/common/history';
-import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+import { IInstantiationService, ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
 import { TestConfigurationService } from 'vs/platform/configuration/test/common/testConfigurationService';
-import { IWindowsService, IWindowService, INativeOpenDialogOptions } from 'vs/platform/windows/common/windows';
+import { IWindowsService, IWindowService, INativeOpenDialogOptions, IEnterWorkspaceResult, IMessageBoxResult } from 'vs/platform/windows/common/windows';
 import { TestWorkspace } from 'vs/platform/workspace/test/common/testWorkspace';
 import { RawTextSource, IRawTextSource } from 'vs/editor/common/model/textSource';
 import { IEnvironmentService } from 'vs/platform/environment/common/environment';
@@ -58,6 +58,7 @@ import { IWorkspaceIdentifier, ISingleFolderWorkspaceIdentifier, isSingleFolderW
 import { IRecentlyOpened } from 'vs/platform/history/common/history';
 import { ITextResourceConfigurationService } from 'vs/editor/common/services/resourceConfiguration';
 import { IPosition } from 'vs/editor/common/core/position';
+import { ICommandAction } from 'vs/platform/actions/common/actions';
 
 export function createFileInput(instantiationService: IInstantiationService, resource: URI): FileEditorInput {
 	return instantiationService.createInstance(FileEditorInput, resource, void 0);
@@ -73,34 +74,42 @@ export class TestContextService implements IWorkspaceContextService {
 	private options: any;
 
 	private _onDidChangeWorkspaceName: Emitter<void>;
-	private _onDidChangeWorkspaceFolders: Emitter<void>;
+	private _onDidChangeWorkspaceFolders: Emitter<IWorkspaceFoldersChangeEvent>;
+	private _onDidChangeWorkbenchState: Emitter<WorkbenchState>;
 
 	constructor(workspace: any = TestWorkspace, options: any = null) {
 		this.workspace = workspace;
 		this.id = generateUuid();
 		this.options = options || Object.create(null);
-		this._onDidChangeWorkspaceFolders = new Emitter<void>();
+		this._onDidChangeWorkspaceFolders = new Emitter<IWorkspaceFoldersChangeEvent>();
+		this._onDidChangeWorkbenchState = new Emitter<WorkbenchState>();
 	}
 
 	public get onDidChangeWorkspaceName(): Event<void> {
 		return this._onDidChangeWorkspaceName.event;
 	}
 
-	public get onDidChangeWorkspaceFolders(): Event<void> {
+	public get onDidChangeWorkspaceFolders(): Event<IWorkspaceFoldersChangeEvent> {
 		return this._onDidChangeWorkspaceFolders.event;
 	}
 
-	public getFolders(): URI[] {
+	public get onDidChangeWorkbenchState(): Event<WorkbenchState> {
+		return this._onDidChangeWorkbenchState.event;
+	}
+
+	public getFolders(): IWorkspaceFolder[] {
 		return this.workspace ? this.workspace.folders : [];
 	}
 
 	public getWorkbenchState(): WorkbenchState {
-		if (this.workspace) {
-			if (this.workspace.configuration) {
-				return WorkbenchState.WORKSPACE;
-			}
+		if (this.workspace.configuration) {
+			return WorkbenchState.WORKSPACE;
+		}
+
+		if (this.workspace.folders.length) {
 			return WorkbenchState.FOLDER;
 		}
+
 		return WorkbenchState.EMPTY;
 	}
 
@@ -108,7 +117,15 @@ export class TestContextService implements IWorkspaceContextService {
 		return this.workspace;
 	}
 
-	public getWorkspaceFolder(resource: URI): URI {
+	public addFolders(foldersToAdd: URI[]): TPromise<void> {
+		return TPromise.as(void 0);
+	}
+
+	public removeFolders(foldersToRemove: URI[]): TPromise<void> {
+		return TPromise.as(void 0);
+	}
+
+	public getWorkspaceFolder(resource: URI): IWorkspaceFolder {
 		return this.isInsideWorkspace(resource) ? this.workspace.folders[0] : null;
 	}
 
@@ -126,7 +143,7 @@ export class TestContextService implements IWorkspaceContextService {
 
 	public isInsideWorkspace(resource: URI): boolean {
 		if (resource && this.workspace) {
-			return paths.isEqualOrParent(resource.fsPath, this.workspace.folders[0].fsPath, !isLinux /* ignorecase */);
+			return paths.isEqualOrParent(resource.fsPath, this.workspace.folders[0].uri.fsPath, !isLinux /* ignorecase */);
 		}
 
 		return false;
@@ -137,7 +154,7 @@ export class TestContextService implements IWorkspaceContextService {
 	}
 
 	public isCurrentWorkspace(workspaceIdentifier: ISingleFolderWorkspaceIdentifier | IWorkspaceIdentifier): boolean {
-		return isSingleFolderWorkspaceIdentifier(workspaceIdentifier) && this.pathEquals(this.workspace.folders[0].fsPath, workspaceIdentifier);
+		return isSingleFolderWorkspaceIdentifier(workspaceIdentifier) && this.pathEquals(this.workspace.folders[0].uri.fsPath, workspaceIdentifier);
 	}
 
 	private pathEquals(path1: string, path2: string): boolean {
@@ -250,6 +267,11 @@ export function workbenchInstantiationService(): IInstantiationService {
 	instantiationService.stub(ITextModelService, <ITextModelService>instantiationService.createInstance(TextModelResolverService));
 	instantiationService.stub(IEnvironmentService, TestEnvironmentService);
 	instantiationService.stub(IThemeService, new TestThemeService());
+	instantiationService.stub(IChoiceService, {
+		choose: (severity, message, options, cancelId): TPromise<number> => {
+			return TPromise.as(cancelId);
+		}
+	});
 
 	return instantiationService;
 }
@@ -262,9 +284,6 @@ export class TestHistoryService implements IHistoryService {
 	}
 
 	public reopenLastClosedEditor(): void {
-	}
-
-	public add(input: IEditorInput, selection?: ITextEditorSelection): void {
 	}
 
 	public forward(acrossEditors?: boolean): void {
@@ -292,6 +311,7 @@ export class TestHistoryService implements IHistoryService {
 }
 
 export class TestMessageService implements IMessageService {
+
 	public _serviceBrand: any;
 
 	private counter: number;
@@ -314,8 +334,12 @@ export class TestMessageService implements IMessageService {
 		// No-op
 	}
 
-	public confirm(confirmation: IConfirmation): boolean {
+	public confirmSync(confirmation: IConfirmation): boolean {
 		return false;
+	}
+
+	public confirm(confirmation: IConfirmation): Promise<IConfirmationResult> {
+		return TPromise.as({ confirmed: false });
 	}
 }
 
@@ -444,6 +468,7 @@ export class TestEditorGroupService implements IEditorGroupService {
 	private stacksModel: EditorStacksModel;
 
 	private _onEditorsChanged: Emitter<void>;
+	private _onEditorOpening: Emitter<IEditorOpeningEvent>;
 	private _onEditorOpenFail: Emitter<IEditorInput>;
 	private _onEditorsMoved: Emitter<void>;
 	private _onGroupOrientationChanged: Emitter<void>;
@@ -452,6 +477,7 @@ export class TestEditorGroupService implements IEditorGroupService {
 	constructor(callback?: (method: string) => void) {
 		this._onEditorsMoved = new Emitter<void>();
 		this._onEditorsChanged = new Emitter<void>();
+		this._onEditorOpening = new Emitter<IEditorOpeningEvent>();
 		this._onGroupOrientationChanged = new Emitter<void>();
 		this._onEditorOpenFail = new Emitter<IEditorInput>();
 		this._onTabOptionsChanged = new Emitter<IEditorTabOptions>();
@@ -476,6 +502,10 @@ export class TestEditorGroupService implements IEditorGroupService {
 
 	public get onEditorsChanged(): Event<void> {
 		return this._onEditorsChanged.event;
+	}
+
+	public get onEditorOpening(): Event<IEditorOpeningEvent> {
+		return this._onEditorOpening.event;
 	}
 
 	public get onEditorOpenFail(): Event<IEditorInput> {
@@ -549,6 +579,10 @@ export class TestEditorGroupService implements IEditorGroupService {
 
 	public getTabOptions(): IEditorTabOptions {
 		return {};
+	}
+
+	public invokeWithinEditorContext<T>(fn: (accessor: ServicesAccessor) => T): T {
+		return fn(null);
 	}
 }
 
@@ -892,11 +926,11 @@ export class TestWindowService implements IWindowService {
 		return TPromise.as(void 0);
 	}
 
-	createAndOpenWorkspace(folders?: string[], path?: string): TPromise<void> {
+	createAndEnterWorkspace(folderPaths?: string[], path?: string): TPromise<IEnterWorkspaceResult> {
 		return TPromise.as(void 0);
 	}
 
-	saveAndOpenWorkspace(path: string): TPromise<void> {
+	saveAndEnterWorkspace(path: string): TPromise<IEnterWorkspaceResult> {
 		return TPromise.as(void 0);
 	}
 
@@ -944,8 +978,12 @@ export class TestWindowService implements IWindowService {
 		return TPromise.as(void 0);
 	}
 
-	showMessageBox(options: Electron.MessageBoxOptions): number {
+	showMessageBoxSync(options: Electron.MessageBoxOptions): number {
 		return 0;
+	}
+
+	showMessageBox(options: Electron.MessageBoxOptions): Promise<IMessageBoxResult> {
+		return TPromise.as(void 0);
 	}
 
 	showSaveDialog(options: Electron.SaveDialogOptions, callback?: (fileName: string) => void): string {
@@ -954,6 +992,10 @@ export class TestWindowService implements IWindowService {
 
 	showOpenDialog(options: Electron.OpenDialogOptions, callback?: (fileNames: string[]) => void): string[] {
 		return void 0;
+	}
+
+	updateTouchBar(items: ICommandAction[][]): Promise<void> {
+		return TPromise.as(void 0);
 	}
 }
 
@@ -1036,11 +1078,11 @@ export class TestWindowsService implements IWindowsService {
 		return TPromise.as(void 0);
 	}
 
-	createAndOpenWorkspace(windowId: number, folders?: string[], path?: string): TPromise<void> {
+	createAndEnterWorkspace(windowId: number, folderPaths?: string[], path?: string): TPromise<IEnterWorkspaceResult> {
 		return TPromise.as(void 0);
 	}
 
-	saveAndOpenWorkspace(windowId: number, path: string): TPromise<void> {
+	saveAndEnterWorkspace(windowId: number, path: string): TPromise<IEnterWorkspaceResult> {
 		return TPromise.as(void 0);
 	}
 
@@ -1161,6 +1203,10 @@ export class TestWindowsService implements IWindowsService {
 		return TPromise.as(void 0);
 	}
 
+	updateTouchBar(windowId: number, items: ICommandAction[][]): Promise<void> {
+		return TPromise.as(void 0);
+	}
+
 	// This needs to be handled from browser process to prevent
 	// foreground ordering issues on Windows
 	openExternal(url: string): TPromise<boolean> {
@@ -1180,7 +1226,7 @@ export class TestTextResourceConfigurationService implements ITextResourceConfig
 	constructor(private configurationService = new TestConfigurationService()) {
 	}
 
-	public onDidUpdateConfiguration() {
+	public onDidChangeConfiguration() {
 		return { dispose() { } };
 	}
 
@@ -1190,4 +1236,8 @@ export class TestTextResourceConfigurationService implements ITextResourceConfig
 	public getConfiguration(resource: any, position?: any, section?: any): any {
 		return this.configurationService.getConfiguration(section, { resource });
 	}
+}
+
+export function getRandomTestPath(tmpdir: string, ...segments: string[]): string {
+	return paths.join(tmpdir, ...segments, generateUuid());
 }

@@ -37,6 +37,11 @@
         }
       },
       {
+        "command": "git.close",
+        "title": "%command.close%",
+        "category": "Git"
+      },
+      {
         "command": "git.refresh",
         "title": "%command.refresh%",
         "category": "Git",
@@ -95,6 +100,24 @@
         "command": "git.revertSelectedRanges",
         "title": "%command.revertSelectedRanges%",
         "category": "Git"
+      },
+      {
+        "command": "git.stageChange",
+        "title": "%command.stageChange%",
+        "category": "Git",
+        "icon": {
+          "light": "resources/icons/light/stage.svg",
+          "dark": "resources/icons/dark/stage.svg"
+        }
+      },
+      {
+        "command": "git.revertChange",
+        "title": "%command.revertChange%",
+        "category": "Git",
+        "icon": {
+          "light": "resources/icons/light/clean.svg",
+          "dark": "resources/icons/dark/clean.svg"
+        }
       },
       {
         "command": "git.unstage",
@@ -565,6 +588,13 @@
           "when": "config.git.enabled && scmProvider == git"
         }
       ],
+      "scm/sourceControl": [
+        {
+          "command": "git.close",
+          "group": "navigation",
+          "when": "config.git.enabled && scmProvider == git"
+        }
+      ],
       "scm/resourceGroup/context": [
         {
           "command": "git.stageAll",
@@ -693,7 +723,7 @@
         {
           "command": "git.openChange",
           "group": "navigation",
-          "when": "config.git.enabled && gitOpenRepositoryCount != 0 && !isInDiffEditor && resourceScheme != extension"
+          "when": "config.git.enabled && gitOpenRepositoryCount != 0 && !isInDiffEditor && resourceScheme == file"
         },
         {
           "command": "git.stageSelectedRanges",
@@ -709,6 +739,16 @@
           "command": "git.revertSelectedRanges",
           "group": "2_git@3",
           "when": "config.git.enabled && gitOpenRepositoryCount != 0 && isInDiffEditor && resourceScheme != merge-conflict.conflict-diff"
+        }
+      ],
+      "scm/change/title": [
+        {
+          "command": "git.stageChange",
+          "when": "config.git.enabled && originalResourceScheme == git"
+        },
+        {
+          "command": "git.revertChange",
+          "when": "config.git.enabled && originalResourceScheme == git"
         }
       ]
     },
@@ -791,16 +831,46 @@
           "default": false
         }
       }
-    }
+    },
+    "colors": [
+      {
+        "id": "git.color.modified",
+        "description": "Color for modified resources",
+        "defaults": {
+          "light": "#D58809",
+          "dark": "#E2C08D",
+          "highContrast": "#E2C08D"
+        }
+      },
+      {
+        "id": "git.color.untracked",
+        "description": "Color for untracked resources",
+        "defaults": {
+          "light": "#00B333",
+          "dark": "#73C991",
+          "highContrast": "#73C991"
+        }
+      },
+      {
+        "id": "git.color.ignored",
+        "description": "Color for ignored resources",
+        "defaults": {
+          "light": "#8E8E90",
+          "dark": "#A7A8A9",
+          "highContrast": "#A7A8A9"
+        }
+      }
+    ]
   },
   "dependencies": {
+    "byline": "^5.0.0",
     "iconv-lite": "0.4.15",
     "vscode-extension-telemetry": "0.0.8",
     "vscode-nls": "2.0.2"
   },
   "devDependencies": {
-    "@types/mocha": "^2.2.41",
-    "@types/node": "^7.0.4",
+    "@types/mocha": "2.2.43",
+    "@types/node": "7.0.43",
     "mocha": "^3.2.0"
   }
 }

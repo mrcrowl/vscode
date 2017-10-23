@@ -20,14 +20,14 @@ export class Problems {
 
 	public async showProblemsView(): Promise<any> {
 		if (!await this.isVisible()) {
-			await this.spectron.command('workbench.actions.view.problems');
+			await this.spectron.runCommand('workbench.actions.view.problems');
 			await this.waitForProblemsView();
 		}
 	}
 
 	public async hideProblemsView(): Promise<any> {
 		if (await this.isVisible()) {
-			await this.spectron.command('workbench.actions.view.problems');
+			await this.spectron.runCommand('workbench.actions.view.problems');
 			await this.spectron.client.waitForElement(Problems.PROBLEMS_VIEW_SELECTOR, el => !el);
 		}
 	}
@@ -47,7 +47,7 @@ export class Problems {
 	}
 
 	public static getSelectorInEditor(problemType: ProblemSeverity): string {
-		let selector = problemType === ProblemSeverity.WARNING ? 'greensquiggly' : 'redsquiggly';
+		let selector = problemType === ProblemSeverity.WARNING ? 'warningsquiggly' : 'errorsquiggly';
 		return `.view-overlays .cdr.${selector}`;
 	}
 }

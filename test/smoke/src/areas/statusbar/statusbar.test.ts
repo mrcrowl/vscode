@@ -13,7 +13,6 @@ describe('Statusbar', () => {
 	let app: SpectronApplication = new SpectronApplication();
 	before(() => app.start('Statusbar'));
 	after(() => app.stop());
-	beforeEach(function () { app.screenCapturer.testName = this.currentTest.title; });
 
 	it('verifies presence of all default status bar elements', async function () {
 		await app.workbench.statusbar.waitForStatusbarElement(StatusBarElement.BRANCH_STATUS);
@@ -69,7 +68,7 @@ describe('Statusbar', () => {
 
 		await app.workbench.quickopen.waitForQuickOpenOpened();
 
-		await app.workbench.quickopen.submit('15');
+		await app.workbench.quickopen.submit(':15');
 		await app.workbench.editor.waitForHighlightingLine(15);
 	});
 
@@ -78,8 +77,8 @@ describe('Statusbar', () => {
 		await app.workbench.statusbar.clickOn(StatusBarElement.EOL_STATUS);
 
 		await app.workbench.quickopen.waitForQuickOpenOpened();
+		await app.workbench.quickopen.selectQuickOpenElement(1);
 
-		app.workbench.quickopen.selectQuickOpenElement(1);
 		await app.workbench.statusbar.waitForEOL('CRLF');
 	});
 });

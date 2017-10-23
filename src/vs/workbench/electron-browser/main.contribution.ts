@@ -18,7 +18,7 @@ import { CloseEditorAction, KeybindingsReferenceAction, OpenDocumentationUrlActi
 import { MessagesVisibleContext } from 'vs/workbench/electron-browser/workbench';
 import { IJSONSchema } from 'vs/base/common/jsonSchema';
 import { registerCommands } from 'vs/workbench/electron-browser/commands';
-import { AddRootFolderAction, OpenWorkspaceAction, SaveWorkspaceAsAction, OpenWorkspaceConfigFileAction } from 'vs/workbench/browser/actions/workspaceActions';
+import { AddRootFolderAction, GlobalRemoveRootFolderAction, OpenWorkspaceAction, SaveWorkspaceAsAction, OpenWorkspaceConfigFileAction, OpenFolderAsWorkspaceInNewWindowAction } from 'vs/workbench/browser/actions/workspaceActions';
 import { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
 import { inQuickOpenContext, getQuickNavigateHandler } from 'vs/workbench/browser/parts/quickopen/quickopen';
 import { KeybindingsRegistry } from 'vs/platform/keybinding/common/keybindingsRegistry';
@@ -84,14 +84,13 @@ workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(Naviga
 workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(IncreaseViewSizeAction, IncreaseViewSizeAction.ID, IncreaseViewSizeAction.LABEL, null), 'View: Increase Current View Size', viewCategory);
 workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(DecreaseViewSizeAction, DecreaseViewSizeAction.ID, DecreaseViewSizeAction.LABEL, null), 'View: Decrease Current View Size', viewCategory);
 
-// TODO@Ben multi root
-if (product.quality !== 'stable') {
-	const workspacesCategory = nls.localize('workspaces', "Workspaces");
-	workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(AddRootFolderAction, AddRootFolderAction.ID, AddRootFolderAction.LABEL), 'Workspaces: Add Folder to Workspace...', workspacesCategory);
-	workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(OpenWorkspaceAction, OpenWorkspaceAction.ID, OpenWorkspaceAction.LABEL), 'Workspaces: Open Workspace...', workspacesCategory);
-	workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(SaveWorkspaceAsAction, SaveWorkspaceAsAction.ID, SaveWorkspaceAsAction.LABEL), 'Workspaces: Save Workspace As...', workspacesCategory);
-	workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(OpenWorkspaceConfigFileAction, OpenWorkspaceConfigFileAction.ID, OpenWorkspaceConfigFileAction.LABEL), 'Workspaces: Open Workspace Configuration File', workspacesCategory);
-}
+const workspacesCategory = nls.localize('workspaces', "Workspaces");
+workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(AddRootFolderAction, AddRootFolderAction.ID, AddRootFolderAction.LABEL), 'Workspaces: Add Folder to Workspace...', workspacesCategory);
+workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(GlobalRemoveRootFolderAction, GlobalRemoveRootFolderAction.ID, GlobalRemoveRootFolderAction.LABEL), 'Workspaces: Remove Folder from Workspace...', workspacesCategory);
+workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(OpenWorkspaceAction, OpenWorkspaceAction.ID, OpenWorkspaceAction.LABEL), 'Workspaces: Open Workspace...', workspacesCategory);
+workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(SaveWorkspaceAsAction, SaveWorkspaceAsAction.ID, SaveWorkspaceAsAction.LABEL), 'Workspaces: Save Workspace As...', workspacesCategory);
+workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(OpenWorkspaceConfigFileAction, OpenWorkspaceConfigFileAction.ID, OpenWorkspaceConfigFileAction.LABEL), 'Workspaces: Open Workspace Configuration File', workspacesCategory);
+workbenchActionsRegistry.registerWorkbenchAction(new SyncActionDescriptor(OpenFolderAsWorkspaceInNewWindowAction, OpenFolderAsWorkspaceInNewWindowAction.ID, OpenFolderAsWorkspaceInNewWindowAction.LABEL), 'Workspaces: Open Folder as Workspace in New Window', workspacesCategory);
 
 // Developer related actions
 const developerCategory = nls.localize('developer', "Developer");
@@ -133,7 +132,7 @@ let workbenchProperties: { [path: string]: IJSONSchema; } = {
 		'type': 'string',
 		'enum': ['default', 'short', 'medium', 'long'],
 		'enumDescriptions': [
-			nls.localize('workbench.editor.labelFormat.default', "Show the name of the file. When tabs are enabled and two files have the same name in one group the distinguinshing sections of each file's path is added. When tabs are disabled, the path relative to workspace root is shown if the editor is active."),
+			nls.localize('workbench.editor.labelFormat.default', "Show the name of the file. When tabs are enabled and two files have the same name in one group the distinguinshing sections of each file's path are added. When tabs are disabled, the path relative to workspace root is shown if the editor is active."),
 			nls.localize('workbench.editor.labelFormat.short', "Show the name of the file followed by it's directory name."),
 			nls.localize('workbench.editor.labelFormat.medium', "Show the name of the file followed by it's path relative to the workspace root."),
 			nls.localize('workbench.editor.labelFormat.long', "Show the name of the file followed by it's absolute path.")
@@ -159,7 +158,7 @@ let workbenchProperties: { [path: string]: IJSONSchema; } = {
 	},
 	'workbench.editor.enablePreview': {
 		'type': 'boolean',
-		'description': nls.localize('enablePreview', "Controls if opened editors show as preview. Preview editors are reused until they are kept (e.g. via double click or editing)."),
+		'description': nls.localize('enablePreview', "Controls if opened editors show as preview. Preview editors are reused until they are kept (e.g. via double click or editing) and show up with an italic font style."),
 		'default': true
 	},
 	'workbench.editor.enablePreviewFromQuickOpen': {
@@ -180,7 +179,7 @@ let workbenchProperties: { [path: string]: IJSONSchema; } = {
 	},
 	'workbench.commandPalette.history': {
 		'type': 'number',
-		'description': nls.localize('commandHistory', "Controls if the number of recently used commands to keep in history for the command palette. Set to 0 to disable command history."),
+		'description': nls.localize('commandHistory', "Controls the number of recently used commands to keep in history for the command palette. Set to 0 to disable command history."),
 		'default': 50
 	},
 	'workbench.commandPalette.preserveInput': {
@@ -320,13 +319,13 @@ Note that there can still be cases where this setting is ignored (e.g. when usin
 		'default': isMacintosh ? '${activeEditorShort}${separator}${rootName}' : '${dirty}${activeEditorShort}${separator}${rootName}${separator}${appName}',
 		'description': nls.localize({ comment: ['This is the description for a setting. Values surrounded by parenthesis are not to be translated.'], key: 'title' },
 			`Controls the window title based on the active editor. Variables are substituted based on the context:
-\${activeEditorShort}: e.g. myFile.txt
-\${activeEditorMedium}: e.g. myFolder/myFile.txt
-\${activeEditorLong}: e.g. /Users/Development/myProject/myFolder/myFile.txt
-\${folderName}: e.g. myFolder
-\${folderPath}: e.g. /Users/Development/myFolder
-\${rootName}: e.g. myFolder1, myFolder2, myFolder3
-\${rootPath}: e.g. /Users/Development/myWorkspace
+\${activeEditorShort}: the file name (e.g. myFile.txt)
+\${activeEditorMedium}: the path of the file relative to the workspace folder (e.g. myFolder/myFile.txt)
+\${activeEditorLong}: the full path of the file (e.g. /Users/Development/myProject/myFolder/myFile.txt)
+\${folderName}: name of the workspace folder the file is contained in (e.g. myFolder)
+\${folderPath}: file path of the workspace folder the file is contained in (e.g. /Users/Development/myFolder)
+\${rootName}: name of the workspace (e.g. myFolder or myWorkspace)
+\${rootPath}: file path of the workspace (e.g. /Users/Development/myWorkspace)
 \${appName}: e.g. VS Code
 \${dirty}: a dirty indicator if the active editor is dirty
 \${separator}: a conditional separator (" - ") that only shows when surrounded by variables with values`)
@@ -386,8 +385,8 @@ if (isMacintosh) {
 		'description': nls.localize('titleBarStyle', "Adjust the appearance of the window title bar. Changes require a full restart to apply.")
 	};
 
-	// macOS Sierra (10.12.x = darwin 16.x) and electron > 1.4.6 only
-	if (os.release().indexOf('16.') === 0 && process.versions.electron !== '1.4.6') {
+	// Minimum: macOS Sierra (10.12.x = darwin 16.x)
+	if (parseFloat(os.release()) >= 16) {
 		properties['window.nativeTabs'] = {
 			'type': 'boolean',
 			'default': false,

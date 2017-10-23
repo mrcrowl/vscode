@@ -39,5 +39,5 @@
 	"workbench.action.terminal.hideFindWidget": "Скрыть мини-приложение поиска",
 	"nextTerminalFindTerm": "Показать следующий найденный термин",
 	"previousTerminalFindTerm": "Показать предыдущий найденный термин",
-	"quickOpenTerm": "Терминал: переключить активный терминал"
+	"quickOpenTerm": "Переключить активный терминал"
 }

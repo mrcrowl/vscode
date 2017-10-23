@@ -53,9 +53,12 @@
 	visibility: hidden;
 }
 
-.explorer-viewlet .header .monaco-count-badge.hidden {
+.explorer-viewlet .panel-header .count {
+	min-width: fit-content;
+}
+
+.explorer-viewlet .panel-header .monaco-count-badge.hidden {
 	display: none;
-	visibility: hidden;
 }
 
 .explorer-folders-view .monaco-tree-row .content {
@@ -101,6 +104,10 @@
 
 .hc-black .explorer-folders-view .monaco-tree-row.has-children .content::before {
 	background-image: url("collapsed-hc.svg");
+}
+
+.explorer-folders-view.hide-arrows .monaco-tree-row .content::before {
+	display: none;
 }
 
 .explorer-viewlet .explorer-open-editors .monaco-tree .monaco-tree-row:hover > .content .monaco-action-bar,

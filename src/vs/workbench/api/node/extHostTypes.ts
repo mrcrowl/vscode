@@ -10,6 +10,7 @@ import URI from 'vs/base/common/uri';
 import { illegalArgument } from 'vs/base/common/errors';
 import * as vscode from 'vscode';
 import { isMarkdownString } from 'vs/base/common/htmlContent';
+import { IRelativePattern } from 'vs/base/common/glob';
 
 export class Disposable {
 
@@ -793,7 +794,7 @@ export class SymbolInformation {
 		if (locationOrUri instanceof Location) {
 			this.location = locationOrUri;
 		} else if (rangeOrContainer instanceof Range) {
-			this.location = new Location(<URI>locationOrUri, rangeOrContainer);
+			this.location = new Location(locationOrUri, rangeOrContainer);
 		}
 	}
 
@@ -842,6 +843,15 @@ export class MarkdownString {
 		this.value += value;
 		return this;
 	}
+
+	appendCodeblock(code: string, language: string = ''): MarkdownString {
+		this.value += '\n```';
+		this.value += language;
+		this.value += '\n';
+		this.value += code;
+		this.value += '\n```\n';
+		return this;
+	}
 }
 
 export class ParameterInformation {
@@ -877,6 +887,16 @@ export class SignatureHelp {
 	constructor() {
 		this.signatures = [];
 	}
+}
+
+export enum CompletionTriggerKind {
+	Invoke = 0,
+	TriggerCharacter = 1
+}
+
+export interface CompletionContext {
+	triggerKind: CompletionTriggerKind;
+	triggerCharacter: string;
 }
 
 export enum CompletionItemKind {
@@ -953,6 +973,7 @@ export class CompletionList {
 }
 
 export enum ViewColumn {
+	Active = -1,
 	One = 1,
 	Two = 2,
 	Three = 3
@@ -1055,7 +1076,7 @@ export class Color {
 
 export type IColorFormat = string | { opaque: string, transparent: string };
 
-export class ColorRange {
+export class ColorInformation {
 	range: Range;
 
 	color: Color;
@@ -1069,6 +1090,19 @@ export class ColorRange {
 		}
 		this.range = range;
 		this.color = color;
+	}
+}
+
+export class ColorPresentation {
+	label: string;
+	textEdit?: TextEdit;
+	additionalTextEdits?: TextEdit[];
+
+	constructor(label: string) {
+		if (!label || typeof label !== 'string') {
+			throw illegalArgument('label');
+		}
+		this.label = label;
 	}
 }
 
@@ -1420,4 +1454,24 @@ export enum ConfigurationTarget {
 	Workspace = 2,
 
 	WorkspaceFolder = 3
+}
+
+export class RelativePattern implements IRelativePattern {
+	base: string;
+	pattern: string;
+
+	constructor(base: vscode.WorkspaceFolder | string, pattern: string) {
+		if (typeof base !== 'string') {
+			if (!base || !URI.isUri(base.uri)) {
+				throw illegalArgument('base');
+			}
+		}
+
+		if (typeof pattern !== 'string') {
+			throw illegalArgument('pattern');
+		}
+
+		this.base = typeof base === 'string' ? base : base.uri.fsPath;
+		this.pattern = pattern;
+	}
 }
