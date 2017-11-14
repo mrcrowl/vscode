@@ -29,12 +29,14 @@ export interface IExtension {
 	name: string;
 	displayName: string;
 	id: string;
+	uuid: string;
 	publisher: string;
 	publisherDisplayName: string;
 	version: string;
 	latestVersion: string;
 	description: string;
 	url: string;
+	repository: string;
 	iconUrl: string;
 	iconUrlFallback: string;
 	licenseUrl: string;

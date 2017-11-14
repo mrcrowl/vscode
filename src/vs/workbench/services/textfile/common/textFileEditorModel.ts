@@ -33,6 +33,7 @@ import { IModelService } from 'vs/editor/common/services/modelService';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { RunOnceScheduler } from 'vs/base/common/async';
 import { IRawTextSource } from 'vs/editor/common/model/textSource';
+import { IHashService } from 'vs/workbench/services/hash/common/hashService';
 
 /**
  * The text file editor model listens to changes to its underlying code editor model and saves these changes through the file service back to the disk.
@@ -86,6 +87,7 @@ export class TextFileEditorModel extends BaseTextEditorModel implements ITextFil
 		@IBackupFileService private backupFileService: IBackupFileService,
 		@IEnvironmentService private environmentService: IEnvironmentService,
 		@IWorkspaceContextService private contextService: IWorkspaceContextService,
+		@IHashService private hashService: IHashService
 	) {
 		super(modelService, modeService);
 
@@ -99,6 +101,7 @@ export class TextFileEditorModel extends BaseTextEditorModel implements ITextFil
 		this.toDispose.push(this._onDidContentChange);
 		this.toDispose.push(this._onDidStateChange);
 		this.preferredEncoding = preferredEncoding;
+		this.inOrphanMode = false;
 		this.dirty = false;
 		this.versionId = 0;
 		this.lastSaveAttemptTime = 0;
@@ -237,7 +240,7 @@ export class TextFileEditorModel extends BaseTextEditorModel implements ITextFil
 	 */
 	public revert(soft?: boolean): TPromise<void> {
 		if (!this.isResolved()) {
-			return TPromise.as<void>(null);
+			return TPromise.wrap<void>(null);
 		}
 
 		// Cancel any running auto-save
@@ -379,7 +382,7 @@ export class TextFileEditorModel extends BaseTextEditorModel implements ITextFil
 						"path": { "classification": "CustomerContent", "purpose": "FeatureInsight" }
 					}
 				*/
-				this.telemetryService.publicLog('fileGet', { mimeType: guessMimeTypes(this.resource.fsPath).join(', '), ext: paths.extname(this.resource.fsPath) });
+				this.telemetryService.publicLog('fileGet', { mimeType: guessMimeTypes(this.resource.fsPath).join(', '), ext: paths.extname(this.resource.fsPath), path: this.hashService.createSHA1(this.resource.fsPath) });
 			}
 
 			return model;
@@ -601,7 +604,7 @@ export class TextFileEditorModel extends BaseTextEditorModel implements ITextFil
 	 */
 	public save(options: ISaveOptions = Object.create(null)): TPromise<void> {
 		if (!this.isResolved()) {
-			return TPromise.as<void>(null);
+			return TPromise.wrap<void>(null);
 		}
 
 		diag('save() - enter', this.resource, new Date());
@@ -640,7 +643,7 @@ export class TextFileEditorModel extends BaseTextEditorModel implements ITextFil
 		if ((!options.force && !this.dirty) || versionId !== this.versionId) {
 			diag(`doSave(${versionId}) - exit - because not dirty and/or versionId is different (this.isDirty: ${this.dirty}, this.versionId: ${this.versionId})`, this.resource, new Date());
 
-			return TPromise.as<void>(null);
+			return TPromise.wrap<void>(null);
 		}
 
 		// Return if currently saving by storing this save request as the next save that should happen.
