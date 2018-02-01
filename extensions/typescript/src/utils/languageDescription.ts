@@ -10,6 +10,7 @@ export interface LanguageDescription {
 	modeIds: string[];
 	configFile?: string;
 	isExternal?: boolean;
+	supportsCompileOnSave: boolean;
 }
 
 export const standardLanguageDescriptions: LanguageDescription[] = [
@@ -17,11 +18,13 @@ export const standardLanguageDescriptions: LanguageDescription[] = [
 		id: 'typescript',
 		diagnosticSource: 'ts',
 		modeIds: [languageModeIds.typescript, languageModeIds.typescriptreact],
-		configFile: 'tsconfig.json'
+		configFile: 'tsconfig.json',
+		supportsCompileOnSave: true
 	}, {
 		id: 'javascript',
 		diagnosticSource: 'js',
 		modeIds: [languageModeIds.javascript, languageModeIds.javascriptreact],
-		configFile: 'jsconfig.json'
+		configFile: 'jsconfig.json',
+		supportsCompileOnSave: false
 	}
 ];

@@ -24,6 +24,8 @@ import * as PConst from './protocol.const';
 import TypeScriptServiceClient from './typescriptServiceClient';
 import { ITypeScriptServiceClientHost } from './typescriptService';
 
+
+import CompileOnSaveSupport from './features/compileOnSaveSupport';
 import BufferSyncSupport from './features/bufferSyncSupport';
 
 import TypingsStatus, { AtaProgressReporter } from './utils/typingsStatus';
@@ -43,13 +45,14 @@ const validateSetting = 'validate.enable';
 class LanguageProvider {
 	private readonly diagnosticsManager: DiagnosticsManager;
 	private readonly bufferSyncSupport: BufferSyncSupport;
+	private readonly compileOnSaveSupport?: CompileOnSaveSupport;
 	private readonly formattingOptionsManager: FormattingConfigurationManager;
 
 	private readonly toUpdateOnConfigurationChanged: ({ updateConfiguration: () => void })[] = [];
 
 	private _validate: boolean = true;
 
-	private _documentSelector: DocumentFilter[];
+	private _documentSelector?: DocumentFilter[];
 
 	private readonly disposables: Disposable[] = [];
 	private readonly versionDependentDisposables: Disposable[] = [];
@@ -69,12 +72,19 @@ class LanguageProvider {
 
 		this.diagnosticsManager = new DiagnosticsManager(description.id, this.client);
 
+		if (description.supportsCompileOnSave) {
+			this.compileOnSaveSupport = new CompileOnSaveSupport(client, description.modeIds);
+		}
 		workspace.onDidChangeConfiguration(this.configurationChanged, this, this.disposables);
 		this.configurationChanged();
 
 		client.onReady().then(async () => {
 			await this.registerProviders(client, commandManager, typingsStatus);
 			this.bufferSyncSupport.listen();
+
+			if (this.compileOnSaveSupport) {
+				this.compileOnSaveSupport.listen();
+			}
 		}, () => {
 			// Nothing to do here. The client did show a message;
 		});
@@ -215,6 +225,11 @@ class LanguageProvider {
 		this.bufferSyncSupport.requestAllDiagnostics();
 		this.formattingOptionsManager.reset();
 		this.registerVersionDependentProviders();
+
+		// WARN: was commented out
+		// if (this.compileOnSaveSupport) {
+		// 	this.compileOnSaveSupport.clearCachedEnabledStatuses();
+		// }
 	}
 
 	private async registerVersionDependentProviders(): Promise<void> {
@@ -241,6 +256,11 @@ class LanguageProvider {
 
 	public triggerAllDiagnostics(): void {
 		this.bufferSyncSupport.requestAllDiagnostics();
+
+		// WARN: was commented out
+		// if (this.compileOnSaveSupport) {
+		// 	this.compileOnSaveSupport.clearCachedEnabledStatuses();
+		// }
 	}
 
 	public syntaxDiagnosticsReceived(file: Uri, syntaxDiagnostics: Diagnostic[]): void {
@@ -330,7 +350,8 @@ export class TypeScriptServiceClientHost implements ITypeScriptServiceClientHost
 					id: 'typescript-plugins',
 					modeIds: Array.from(languages.values()),
 					diagnosticSource: 'ts-plugins',
-					isExternal: true
+					isExternal: true,
+					supportsCompileOnSave: false
 				};
 				const manager = new LanguageProvider(this.client, description, this.commandManager, this.typingsStatus);
 				this.languages.push(manager);

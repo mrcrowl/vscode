@@ -13,8 +13,8 @@ interface IPackageInfo {
 }
 
 export default class TelemetryReporter {
-	private _packageInfo: IPackageInfo | null;
-	private _reporter: VsCodeTelemetryReporter | null;
+	private _packageInfo!: IPackageInfo | null;
+	private _reporter!: VsCodeTelemetryReporter | null;
 
 	dispose() {
 		if (this._reporter) {

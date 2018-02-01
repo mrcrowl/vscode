@@ -113,7 +113,7 @@ export default class TypeScriptServiceClient implements ITypeScriptServiceClient
 
 	private pathSeparator: string;
 
-	private _onReady: { promise: Promise<void>; resolve: () => void; reject: () => void; };
+	private _onReady!: { promise: Promise<void>; resolve: () => void; reject: () => void; };
 	private _configuration: TypeScriptServiceConfiguration;
 	private versionProvider: TypeScriptVersionProvider;
 	private versionPicker: TypeScriptVersionPicker;
