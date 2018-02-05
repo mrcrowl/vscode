@@ -39,8 +39,10 @@ import { URLChannelClient } from 'vs/platform/url/common/urlIpc';
 import { IURLService } from 'vs/platform/url/common/url';
 import { WorkspacesChannelClient } from 'vs/platform/workspaces/common/workspacesIpc';
 import { IWorkspacesService } from 'vs/platform/workspaces/common/workspaces';
+import { createLogService } from 'vs/platform/log/node/spdlogService';
 
 import fs = require('fs');
+import { ConsoleLogService, MultiplexLogService } from 'vs/platform/log/common/log';
 gracefulFs.gracefulify(fs); // enable gracefulFs
 
 const currentWindowId = remote.getCurrentWindow().id;
@@ -72,10 +74,16 @@ function openWorkbench(configuration: IWindowConfiguration): TPromise<void> {
 	const mainServices = createMainProcessServices(mainProcessClient);
 
 	const environmentService = new EnvironmentService(configuration, configuration.execPath);
+	const spdlogService = createLogService(`renderer${currentWindowId}`, environmentService);
+	const consoleLogService = new ConsoleLogService(environmentService);
+	const logService = new MultiplexLogService([consoleLogService, spdlogService]);
+
+	logService.trace('openWorkbench configuration', JSON.stringify(configuration));
 
 	// Since the configuration service is one of the core services that is used in so many places, we initialize it
 	// right before startup of the workbench shell to have its data ready for consumers
 	return createAndInitializeWorkspaceService(configuration, environmentService).then(workspaceService => {
+
 		const timerService = new TimerService((<any>window).MonacoEnvironment.timers as IInitData, workspaceService.getWorkbenchState() === WorkbenchState.EMPTY);
 		const storageService = createStorageService(workspaceService, environmentService);
 
@@ -90,6 +98,7 @@ function openWorkbench(configuration: IWindowConfiguration): TPromise<void> {
 				contextService: workspaceService,
 				configurationService: workspaceService,
 				environmentService,
+				logService,
 				timerService,
 				storageService
 			}, mainServices, configuration);

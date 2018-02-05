@@ -14,11 +14,7 @@ import { ILifecycleService, LifecyclePhase } from 'vs/platform/lifecycle/common/
  * A workbench contribution that will be loaded when the workbench starts and disposed when the workbench shuts down.
  */
 export interface IWorkbenchContribution {
-
-	/**
-	 * The unique identifier of this workbench contribution.
-	 */
-	getId(): string;
+	// Marker Interface
 }
 
 export namespace Extensions {
@@ -72,20 +68,33 @@ export class WorkbenchContributionsRegistry implements IWorkbenchContributionsRe
 		this.instantiationService = instantiationService;
 		this.lifecycleService = lifecycleService;
 
-		[LifecyclePhase.Starting, LifecyclePhase.Restoring, LifecyclePhase.Running, LifecyclePhase.RunningForABit, LifecyclePhase.ShuttingDown].forEach(phase => {
+		[LifecyclePhase.Starting, LifecyclePhase.Restoring, LifecyclePhase.Running, LifecyclePhase.Eventually].forEach(phase => {
 			this.instantiateByPhase(instantiationService, lifecycleService, phase);
 		});
 	}
 
 	private instantiateByPhase(instantiationService: IInstantiationService, lifecycleService: ILifecycleService, phase: LifecyclePhase): void {
-		lifecycleService.when(phase).then(() => {
-			const toBeInstantiated = this.toBeInstantiated.get(phase);
-			if (toBeInstantiated) {
-				while (toBeInstantiated.length > 0) {
-					instantiationService.createInstance(toBeInstantiated.shift());
-				}
+
+		// Instantiate contributions directly when phase is already reached
+		if (lifecycleService.phase >= phase) {
+			this.doInstantiateByPhase(instantiationService, phase);
+		}
+
+		// Otherwise wait for phase to be reached
+		else {
+			lifecycleService.when(phase).then(() => {
+				this.doInstantiateByPhase(instantiationService, phase);
+			});
+		}
+	}
+
+	private doInstantiateByPhase(instantiationService: IInstantiationService, phase: LifecyclePhase): void {
+		const toBeInstantiated = this.toBeInstantiated.get(phase);
+		if (toBeInstantiated) {
+			while (toBeInstantiated.length > 0) {
+				instantiationService.createInstance(toBeInstantiated.shift());
 			}
-		});
+		}
 	}
 }
 

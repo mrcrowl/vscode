@@ -30,8 +30,8 @@ export class FileService implements IFileService {
 	public _serviceBrand: any;
 
 	// If we run with .NET framework < 4.5, we need to detect this error to inform the user
-	private static NET_VERSION_ERROR = 'System.MissingMethodException';
-	private static NET_VERSION_ERROR_IGNORE_KEY = 'ignoreNetVersionError';
+	private static readonly NET_VERSION_ERROR = 'System.MissingMethodException';
+	private static readonly NET_VERSION_ERROR_IGNORE_KEY = 'ignoreNetVersionError';
 
 	private raw: IFileService;
 
@@ -89,6 +89,8 @@ export class FileService implements IFileService {
 	}
 
 	private onFileServiceError(msg: string): void {
+
+		// Forward to unexpected error handler
 		errors.onUnexpectedError(msg);
 
 		// Detect if we run < .NET Framework 4.5

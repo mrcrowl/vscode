@@ -25,7 +25,7 @@ import { IConfigurationChangeEvent, ConfigurationTarget, IConfigurationOverrides
 import { Configuration, WorkspaceConfigurationChangeEvent, AllKeysConfigurationChangeEvent } from 'vs/workbench/services/configuration/common/configurationModels';
 import { IWorkspaceConfigurationService, FOLDER_CONFIG_FOLDER_NAME, defaultSettingsSchemaId, userSettingsSchemaId, workspaceSettingsSchemaId, folderSettingsSchemaId } from 'vs/workbench/services/configuration/common/configuration';
 import { Registry } from 'vs/platform/registry/common/platform';
-import { IConfigurationNode, IConfigurationRegistry, Extensions, settingsSchema, resourceSettingsSchema } from 'vs/platform/configuration/common/configurationRegistry';
+import { IConfigurationNode, IConfigurationRegistry, Extensions, settingsSchema, resourceSettingsSchema, IConfigurationPropertySchema } from 'vs/platform/configuration/common/configurationRegistry';
 import { createHash } from 'crypto';
 import { getWorkspaceLabel, IWorkspaceIdentifier, ISingleFolderWorkspaceIdentifier, isSingleFolderWorkspaceIdentifier, isWorkspaceIdentifier, IStoredWorkspaceFolder, isStoredWorkspaceFolder, IWorkspaceFolderCreationData } from 'vs/platform/workspaces/common/workspaces';
 import { IWindowConfiguration } from 'vs/platform/windows/common/windows';
@@ -40,6 +40,7 @@ import { Schemas } from 'vs/base/common/network';
 import { massageFolderPathForWorkspace } from 'vs/platform/workspaces/node/workspaces';
 import { distinct } from 'vs/base/common/arrays';
 import { UserConfiguration } from 'vs/platform/configuration/node/configuration';
+import { getBaseLabel } from 'vs/base/common/labels';
 
 export class WorkspaceService extends Disposable implements IWorkspaceConfigurationService, IWorkspaceContextService {
 
@@ -335,7 +336,7 @@ export class WorkspaceService extends Disposable implements IWorkspaceConfigurat
 				const ctime = isLinux ? workspaceStat.ino : workspaceStat.birthtime.getTime(); // On Linux, birthtime is ctime, so we cannot use it! We use the ino instead!
 				const id = createHash('md5').update(folderPath.fsPath).update(ctime ? String(ctime) : '').digest('hex');
 				const folder = URI.file(folderPath.fsPath);
-				return new Workspace(id, paths.basename(folderPath.fsPath), toWorkspaceFolders([{ path: folder.fsPath }]), null, ctime);
+				return new Workspace(id, getBaseLabel(folder), toWorkspaceFolders([{ path: folder.fsPath }]), null, ctime);
 			});
 	}
 
@@ -702,7 +703,7 @@ export class DefaultConfigurationExportHelper {
 	}
 
 	private writeConfigModelAndQuit(targetPath: string): TPromise<void> {
-		return this.extensionService.onReady()
+		return this.extensionService.whenInstalledExtensionsRegistered()
 			.then(() => this.writeConfigModel(targetPath))
 			.then(() => this.commandService.executeCommand('workbench.action.quit'))
 			.then(() => { });
@@ -716,28 +717,33 @@ export class DefaultConfigurationExportHelper {
 	}
 
 	private getConfigModel(): IConfigurationExport {
-		const configurations = Registry.as<IConfigurationRegistry>(Extensions.Configuration).getConfigurations().slice();
+		const configRegistry = Registry.as<IConfigurationRegistry>(Extensions.Configuration);
+		const configurations = configRegistry.getConfigurations().slice();
 		const settings: IExportedConfigurationNode[] = [];
+
+		const processProperty = (name: string, prop: IConfigurationPropertySchema) => {
+			const propDetails: IExportedConfigurationNode = {
+				name,
+				description: prop.description,
+				default: prop.default,
+				type: prop.type
+			};
+
+			if (prop.enum) {
+				propDetails.enum = prop.enum;
+			}
+
+			if (prop.enumDescriptions) {
+				propDetails.enumDescriptions = prop.enumDescriptions;
+			}
+
+			settings.push(propDetails);
+		};
+
 		const processConfig = (config: IConfigurationNode) => {
 			if (config.properties) {
 				for (let name in config.properties) {
-					const prop = config.properties[name];
-					const propDetails: IExportedConfigurationNode = {
-						name,
-						description: prop.description,
-						default: prop.default,
-						type: prop.type
-					};
-
-					if (prop.enum) {
-						propDetails.enum = prop.enum;
-					}
-
-					if (prop.enumDescriptions) {
-						propDetails.enumDescriptions = prop.enumDescriptions;
-					}
-
-					settings.push(propDetails);
+					processProperty(name, config.properties[name]);
 				}
 			}
 
@@ -747,6 +753,11 @@ export class DefaultConfigurationExportHelper {
 		};
 
 		configurations.forEach(processConfig);
+
+		const excludedProps = configRegistry.getExcludedConfigurationProperties();
+		for (let name in excludedProps) {
+			processProperty(name, excludedProps[name]);
+		}
 
 		const result: IConfigurationExport = {
 			settings: settings.sort((a, b) => a.name.localeCompare(b.name)),

@@ -4,12 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
+import { LogLevel } from 'vs/platform/log/common/log';
 
 export interface ParsedArgs {
 	[arg: string]: any;
 	_: string[];
+	_urls?: string[];
 	help?: boolean;
 	version?: boolean;
+	status?: boolean;
 	wait?: boolean;
 	waitMarkerFilePath?: string;
 	diff?: boolean;
@@ -22,7 +25,9 @@ export interface ParsedArgs {
 	'user-data-dir'?: string;
 	performance?: boolean;
 	'prof-startup'?: string;
+	'prof-startup-prefix'?: string;
 	verbose?: boolean;
+	log?: string;
 	logExtensionHostCommunication?: boolean;
 	'disable-extensions'?: boolean;
 	'extensions-dir'?: string;
@@ -38,7 +43,7 @@ export interface ParsedArgs {
 	'install-extension'?: string | string[];
 	'uninstall-extension'?: string | string[];
 	'enable-proposed-api'?: string | string[];
-	'open-url'?: string | string[];
+	'open-url'?: boolean;
 	'skip-getting-started'?: boolean;
 	'sticky-quickopen'?: boolean;
 	'disable-telemetry'?: boolean;
@@ -46,6 +51,7 @@ export interface ParsedArgs {
 	'install-source'?: string;
 	'disable-updates'?: string;
 	'disable-crash-reporter'?: string;
+	'skip-add-to-recently-opened'?: boolean;
 }
 
 export const IEnvironmentService = createDecorator<IEnvironmentService>('environmentService');
@@ -75,8 +81,9 @@ export interface IEnvironmentService {
 	appSettingsHome: string;
 	appSettingsPath: string;
 	appKeybindingsPath: string;
-	machineUUID: string;
+
 	settingsSearchBuildId: number;
+	settingsSearchUrl: string;
 
 	backupHome: string;
 	backupWorkspacesPath: string;
@@ -96,19 +103,25 @@ export interface IEnvironmentService {
 	logExtensionHostCommunication: boolean;
 
 	isBuilt: boolean;
-	verbose: boolean;
 	wait: boolean;
+	status: boolean;
 	performance: boolean;
-	profileStartup: { prefix: string, dir: string } | undefined;
+
+	// logging
+	logsPath: string;
+	verbose: boolean;
+	logLevel: LogLevel;
 
 	skipGettingStarted: boolean | undefined;
+
+	skipAddToRecentlyOpened: boolean;
 
 	mainIPCHandle: string;
 	sharedIPCHandle: string;
 
 	nodeCachedDataDir: string;
 
-	installSource: string;
+	installSourcePath: string;
 	disableUpdates: boolean;
 	disableCrashReporter: boolean;
 }

@@ -12,5 +12,6 @@ out-vscode/
 out-vscode-min/
 build/node_modules
 coverage/
-*.vsix
 test_data/
+yarn-error.log
+extensions/typescript/*.vsix

@@ -12,7 +12,6 @@ import { Scope } from 'vs/workbench/common/memento';
 import { dispose, IDisposable } from 'vs/base/common/lifecycle';
 import { IAction, IActionRunner } from 'vs/base/common/actions';
 import { IActionItem } from 'vs/base/browser/ui/actionbar/actionbar';
-import { ITree } from 'vs/base/parts/tree/browser/tree';
 import { firstIndex } from 'vs/base/common/arrays';
 import { DelayedDragHandler } from 'vs/base/browser/dnd';
 import { IExtensionService } from 'vs/platform/extensions/common/extensions';
@@ -28,6 +27,7 @@ import { IContextKeyService, IContextKeyChangeEvent } from 'vs/platform/contextk
 import { StandardMouseEvent } from 'vs/base/browser/mouseEvent';
 import { PanelViewlet, ViewletPanel } from 'vs/workbench/browser/parts/views/panelViewlet';
 import { IPanelOptions } from 'vs/base/browser/ui/splitview/panelview';
+import { WorkbenchTree } from 'vs/platform/list/browser/listService';
 
 export interface IViewOptions extends IPanelOptions {
 	id: string;
@@ -35,21 +35,12 @@ export interface IViewOptions extends IPanelOptions {
 	actionRunner: IActionRunner;
 }
 
-export interface IViewConstructorSignature<T extends ViewsViewletPanel> {
-	new(options: IViewOptions, ...services: { _serviceBrand: any; }[]): T;
-}
-
 export abstract class ViewsViewletPanel extends ViewletPanel {
+
+	private _isVisible: boolean;
 
 	readonly id: string;
 	readonly name: string;
-	protected treeContainer: HTMLElement;
-
-	// TODO@sandeep why is tree here? isn't this coming only from TreeView
-	protected tree: ITree;
-	protected isDisposed: boolean;
-	private _isVisible: boolean;
-	private dragHandler: DelayedDragHandler;
 
 	constructor(
 		options: IViewOptions,
@@ -57,6 +48,72 @@ export abstract class ViewsViewletPanel extends ViewletPanel {
 		protected contextMenuService: IContextMenuService
 	) {
 		super(options.name, options, keybindingService, contextMenuService);
+
+		this.id = options.id;
+		this.name = options.name;
+		this._expanded = options.expanded;
+	}
+
+	setVisible(visible: boolean): TPromise<void> {
+		if (this._isVisible !== visible) {
+			this._isVisible = visible;
+		}
+
+		return TPromise.wrap(null);
+	}
+
+	isVisible(): boolean {
+		return this._isVisible;
+	}
+
+	getActions(): IAction[] {
+		return [];
+	}
+
+	getSecondaryActions(): IAction[] {
+		return [];
+	}
+
+	getActionItem(action: IAction): IActionItem {
+		return null;
+	}
+
+	getActionsContext(): any {
+		return undefined;
+	}
+
+	getOptimalWidth(): number {
+		return 0;
+	}
+
+	create(): TPromise<void> {
+		return TPromise.as(null);
+	}
+
+	shutdown(): void {
+		// Subclass to implement
+	}
+
+}
+
+// TODO@isidor @sandeep remove this class
+export abstract class TreeViewsViewletPanel extends ViewsViewletPanel {
+
+	readonly id: string;
+	readonly name: string;
+	protected treeContainer: HTMLElement;
+
+	// TODO@sandeep why is tree here? isn't this coming only from TreeView
+	protected tree: WorkbenchTree;
+	protected isDisposed: boolean;
+	private dragHandler: DelayedDragHandler;
+
+	constructor(
+		options: IViewOptions,
+		protected keybindingService: IKeybindingService,
+		protected contextMenuService: IContextMenuService
+	) {
+		super(options, keybindingService, contextMenuService);
 
 		this.id = options.id;
 		this.name = options.name;
@@ -81,18 +138,14 @@ export abstract class ViewsViewletPanel extends ViewletPanel {
 		return treeContainer;
 	}
 
-	getViewer(): ITree {
+	getViewer(): WorkbenchTree {
 		return this.tree;
 	}
 
-	isVisible(): boolean {
-		return this._isVisible;
-	}
-
 	setVisible(visible: boolean): TPromise<void> {
-		if (this._isVisible !== visible) {
-			this._isVisible = visible;
-			this.updateTreeVisibility(this.tree, visible && this.isExpanded());
+		if (this.isVisible() !== visible) {
+			return super.setVisible(visible)
+				.then(() => this.updateTreeVisibility(this.tree, visible && this.isExpanded()));
 		}
 
 		return TPromise.wrap(null);
@@ -161,7 +214,7 @@ export abstract class ViewsViewletPanel extends ViewletPanel {
 		super.dispose();
 	}
 
-	private updateTreeVisibility(tree: ITree, isVisible: boolean): void {
+	protected updateTreeVisibility(tree: WorkbenchTree, isVisible: boolean): void {
 		if (!tree) {
 			return;
 		}
@@ -242,7 +295,7 @@ export class ViewsViewlet extends PanelViewlet {
 		this._register(this.contextKeyService.onDidChangeContext(this.onContextChanged, this));
 
 		// Update headers after and title contributed views after available, since we read from cache in the beginning to know if the viewlet has single view or not. Ref #29609
-		this.extensionService.onReady().then(() => {
+		this.extensionService.whenInstalledExtensionsRegistered().then(() => {
 			this.areExtensionsReady = true;
 			this.updateHeaders();
 		});
@@ -366,16 +419,14 @@ export class ViewsViewlet extends PanelViewlet {
 			for (const view of panels) {
 				let viewState = this.viewsStates.get(view.id);
 				if (!viewState || typeof viewState.size === 'undefined' || !view.isExpanded() !== viewState.collapsed) {
-					viewState = this.updateViewStateSize(view);
-					this.viewsStates.set(view.id, viewState);
+					this.updateViewStateSize(view);
 				}
 			}
 
 			if (toRemove.length) {
 				for (const viewDescriptor of toRemove) {
 					let view = this.getView(viewDescriptor.id);
-					const viewState = this.updateViewStateSize(view);
-					this.viewsStates.set(view.id, viewState);
+					this.updateViewStateSize(view);
 					this.removePanel(view);
 					this.viewsViewletPanels.splice(this.viewsViewletPanels.indexOf(view), 1);
 				}
@@ -398,7 +449,7 @@ export class ViewsViewlet extends PanelViewlet {
 				this.addPanel(view, size, index);
 				this.viewsViewletPanels.splice(index, 0, view);
 
-				this.viewsStates.set(view.id, this.updateViewStateSize(view));
+				this.updateViewStateSize(view);
 			}
 
 			return TPromise.join(toCreate.map(view => view.create()))
@@ -412,8 +463,7 @@ export class ViewsViewlet extends PanelViewlet {
 
 	private updateAllViewsSizes(): void {
 		for (const view of this.viewsViewletPanels) {
-			let viewState = this.updateViewStateSize(view);
-			this.viewsStates.set(view.id, viewState);
+			this.updateViewStateSize(view);
 		}
 	}
 
@@ -455,10 +505,6 @@ export class ViewsViewlet extends PanelViewlet {
 
 			view.order = order;
 		}
-	}
-
-	protected getDefaultViewSize(): number | undefined {
-		return undefined;
 	}
 
 	private isCurrentlyVisible(viewDescriptor: IViewDescriptor): boolean {
@@ -570,10 +616,16 @@ export class ViewsViewlet extends PanelViewlet {
 		return this.viewsViewletPanels.filter(view => view.id === id)[0];
 	}
 
-	private updateViewStateSize(view: ViewsViewletPanel): IViewState {
+	private updateViewStateSize(view: ViewsViewletPanel): void {
 		const currentState = this.viewsStates.get(view.id);
+		if (currentState && !this.didLayout) {
+			// Do not update to new state if the layout has not happened yet
+			return;
+		}
+
 		const newViewState = this.createViewState(view);
-		return currentState ? { ...currentState, collapsed: newViewState.collapsed, size: newViewState.size } : newViewState;
+		const stateToUpdate = currentState ? { ...currentState, collapsed: newViewState.collapsed, size: newViewState.size } : newViewState;
+		this.viewsStates.set(view.id, stateToUpdate);
 	}
 
 	protected createViewState(view: ViewsViewletPanel): IViewState {

@@ -36,9 +36,9 @@ export const CONTEXT_NOT_IN_DEBUG_REPL: ContextKeyExpr = CONTEXT_IN_DEBUG_REPL.t
 export const CONTEXT_ON_FIRST_DEBUG_REPL_LINE = new RawContextKey<boolean>('onFirsteDebugReplLine', false);
 export const CONTEXT_ON_LAST_DEBUG_REPL_LINE = new RawContextKey<boolean>('onLastDebugReplLine', false);
 export const CONTEXT_BREAKPOINT_WIDGET_VISIBLE = new RawContextKey<boolean>('breakpointWidgetVisible', false);
-export const CONTEXT_BREAKPOINTS_FOCUSED = new RawContextKey<boolean>('breakpointsFocused', false);
-export const CONTEXT_WATCH_EXPRESSIONS_FOCUSED = new RawContextKey<boolean>('watchExpressionsFocused', false);
-export const CONTEXT_VARIABLES_FOCUSED = new RawContextKey<boolean>('variablesFocused', false);
+export const CONTEXT_BREAKPOINTS_FOCUSED = new RawContextKey<boolean>('breakpointsFocused', true);
+export const CONTEXT_WATCH_EXPRESSIONS_FOCUSED = new RawContextKey<boolean>('watchExpressionsFocused', true);
+export const CONTEXT_VARIABLES_FOCUSED = new RawContextKey<boolean>('variablesFocused', true);
 
 export const EDITOR_CONTRIBUTION_ID = 'editor.contrib.debug';
 export const DEBUG_SCHEME = 'debug';
@@ -288,7 +288,6 @@ export interface IViewModel extends ITreeElement {
 	onDidFocusProcess: Event<IProcess | undefined>;
 	onDidFocusStackFrame: Event<{ stackFrame: IStackFrame, explicit: boolean }>;
 	onDidSelectExpression: Event<IExpression>;
-	onDidSelectFunctionBreakpoint: Event<IFunctionBreakpoint>;
 }
 
 export interface IModel extends ITreeElement {
@@ -300,10 +299,19 @@ export interface IModel extends ITreeElement {
 	getWatchExpressions(): IExpression[];
 	getReplElements(): IReplElement[];
 
-	onDidChangeBreakpoints: Event<void>;
+	onDidChangeBreakpoints: Event<IBreakpointsChangeEvent>;
 	onDidChangeCallStack: Event<void>;
 	onDidChangeWatchExpressions: Event<IExpression>;
 	onDidChangeReplElements: Event<void>;
+}
+
+/**
+ * An event describing a change to the set of [breakpoints](#debug.Breakpoint).
+ */
+export interface IBreakpointsChangeEvent {
+	added?: (IBreakpoint | IFunctionBreakpoint)[];
+	removed?: (IBreakpoint | IFunctionBreakpoint)[];
+	changed?: (IBreakpoint | IFunctionBreakpoint)[];
 }
 
 // Debug enums
@@ -323,6 +331,7 @@ export interface IDebugConfiguration {
 	openExplorerOnEnd: boolean;
 	inlineValues: boolean;
 	hideActionBar: boolean;
+	showInStatusBar: string;
 	internalConsoleOptions: string;
 }
 
@@ -531,7 +540,7 @@ export interface IDebugService {
 	 * Removes all breakpoints. If id is passed only removes the breakpoint associated with that id.
 	 * Notifies debug adapter of breakpoint changes.
 	 */
-	removeBreakpoints(id?: string, skipEmit?: boolean): TPromise<any>;
+	removeBreakpoints(id?: string): TPromise<any>;
 
 	/**
 	 * Adds a new no name function breakpoint. The function breakpoint should be renamed once user enters the name.

@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as cp from 'child_process';
+import * as which from 'which';
 import { EventEmitter } from 'events';
 import iconv = require('iconv-lite');
 import * as filetype from 'file-type';
@@ -124,14 +125,21 @@ function findSystemGitWin32(base: string, onLookup: (path: string) => void): Pro
 	return findSpecificGit(path.join(base, 'Git', 'cmd', 'git.exe'), onLookup);
 }
 
+function findGitWin32InPath(onLookup: (path: string) => void): Promise<IGit> {
+	const whichPromise = new Promise<string>((c, e) => which('git.exe', (err, path) => err ? e(err) : c(path)));
+	return whichPromise.then(path => findSpecificGit(path, onLookup));
+}
+
 function findGitWin32(onLookup: (path: string) => void): Promise<IGit> {
 	return findSystemGitWin32(process.env['ProgramW6432'] as string, onLookup)
 		.then(void 0, () => findSystemGitWin32(process.env['ProgramFiles(x86)'] as string, onLookup))
-		.then(void 0, () => findSystemGitWin32(process.env['ProgramFiles'] as string, onLookup));
+		.then(void 0, () => findSystemGitWin32(process.env['ProgramFiles'] as string, onLookup))
+		.then(void 0, () => findSystemGitWin32(path.join(process.env['LocalAppData'] as string, 'Programs'), onLookup))
+		.then(void 0, () => findGitWin32InPath(onLookup));
 }
 
 export function findGit(hint: string | undefined, onLookup: (path: string) => void): Promise<IGit> {
-	var first = hint ? findSpecificGit(hint, onLookup) : Promise.reject<IGit>(null);
+	const first = hint ? findSpecificGit(hint, onLookup) : Promise.reject<IGit>(null);
 
 	return first
 		.then(void 0, () => {
@@ -977,7 +985,7 @@ export class Repository {
 		try {
 			const args = ['stash', 'pop'];
 
-			if (typeof index === 'string') {
+			if (typeof index === 'number') {
 				args.push(`stash@{${index}}`);
 			}
 
@@ -1017,12 +1025,12 @@ export class Repository {
 			const onStdoutData = (raw: string) => {
 				parser.update(raw);
 
-				if (parser.status.length > 5000) {
+				if (parser.status.length > limit) {
 					child.removeListener('exit', onExit);
 					child.stdout.removeListener('data', onStdoutData);
 					child.kill();
 
-					c({ status: parser.status.slice(0, 5000), didHitLimit: true });
+					c({ status: parser.status.slice(0, limit), didHitLimit: true });
 				}
 			};
 

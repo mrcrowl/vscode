@@ -138,7 +138,7 @@ export class SettingsChangeRelauncher implements IWorkbenchContribution {
 	private doConfirm(message: string, detail: string, primaryButton: string, confirmed: () => void): void {
 		this.windowService.isFocused().then(focused => {
 			if (focused) {
-				const confirm = this.messageService.confirmSync({
+				const confirm = this.messageService.confirm({
 					type: 'info',
 					message,
 					detail,
@@ -150,10 +150,6 @@ export class SettingsChangeRelauncher implements IWorkbenchContribution {
 				}
 			}
 		});
-	}
-
-	public getId(): string {
-		return 'workbench.relauncher';
 	}
 
 	public dispose(): void {

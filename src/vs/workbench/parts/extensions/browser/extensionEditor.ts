@@ -12,7 +12,7 @@ import { marked } from 'vs/base/common/marked/marked';
 import { always } from 'vs/base/common/async';
 import * as arrays from 'vs/base/common/arrays';
 import { OS } from 'vs/base/common/platform';
-import Event, { Emitter, once, fromEventEmitter, chain } from 'vs/base/common/event';
+import Event, { Emitter, once, chain } from 'vs/base/common/event';
 import Cache from 'vs/base/common/cache';
 import { Action } from 'vs/base/common/actions';
 import { isPromiseCanceledError } from 'vs/base/common/errors';
@@ -33,7 +33,7 @@ import { Renderer, DataSource, Controller } from 'vs/workbench/parts/extensions/
 import { RatingsWidget, InstallWidget } from 'vs/workbench/parts/extensions/browser/extensionsWidgets';
 import { EditorOptions } from 'vs/workbench/common/editor';
 import { ActionBar } from 'vs/base/browser/ui/actionbar/actionbar';
-import { CombinedInstallAction, UpdateAction, EnableAction, DisableAction, BuiltinStatusLabelAction, ReloadAction } from 'vs/workbench/parts/extensions/browser/extensionsActions';
+import { CombinedInstallAction, UpdateAction, EnableAction, DisableAction, BuiltinStatusLabelAction, ReloadAction, MaliciousStatusLabelAction } from 'vs/workbench/parts/extensions/browser/extensionsActions';
 import WebView from 'vs/workbench/parts/html/browser/webview';
 import { KeybindingIO } from 'vs/workbench/services/keybinding/common/keybindingIO';
 import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
@@ -42,17 +42,16 @@ import { IMessageService } from 'vs/platform/message/common/message';
 import { IOpenerService } from 'vs/platform/opener/common/opener';
 import { Tree } from 'vs/base/parts/tree/browser/treeImpl';
 import { Position } from 'vs/platform/editor/common/editor';
-import { IListService } from 'vs/platform/list/browser/listService';
 import { IPartService, Parts } from 'vs/workbench/services/part/common/partService';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { KeybindingLabel } from 'vs/base/browser/ui/keybindingLabel/keybindingLabel';
-import { attachListStyler } from 'vs/platform/theme/common/styler';
 import { IContextViewService } from 'vs/platform/contextview/browser/contextView';
 import { IContextKeyService, RawContextKey, ContextKeyExpr, IContextKey } from 'vs/platform/contextkey/common/contextkey';
 import { Command, ICommandOptions } from 'vs/editor/browser/editorExtensions';
 import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { KeybindingsRegistry } from 'vs/platform/keybinding/common/keybindingsRegistry';
 import { Color } from 'vs/base/common/color';
+import { WorkbenchTree, IListService } from 'vs/platform/list/browser/listService';
 
 /**  A context key that is set when an extension editor webview has focus. */
 export const KEYBINDING_CONTEXT_EXTENSIONEDITOR_WEBVIEW_FOCUS = new RawContextKey<boolean>('extensionEditorWebviewFocus', undefined);
@@ -153,6 +152,7 @@ export class ExtensionEditor extends BaseEditor {
 	private icon: HTMLImageElement;
 	private name: HTMLElement;
 	private identifier: HTMLElement;
+	private preview: HTMLElement;
 	private license: HTMLElement;
 	private publisher: HTMLElement;
 	private installCount: HTMLElement;
@@ -215,6 +215,7 @@ export class ExtensionEditor extends BaseEditor {
 		const title = append(details, $('.title'));
 		this.name = append(title, $('span.name.clickable', { title: localize('name', "Extension name") }));
 		this.identifier = append(title, $('span.identifier', { title: localize('extension id', "Extension identifier") }));
+		this.preview = append(title, $('span.preview', { title: localize('preview', "Preview") }));
 
 		const subtitle = append(details, $('.subtitle'));
 		this.publisher = append(subtitle, $('span.publisher.clickable', { title: localize('publisher', "Publisher name") }));
@@ -250,7 +251,7 @@ export class ExtensionEditor extends BaseEditor {
 
 		this.recommendation = append(details, $('.recommendation'));
 
-		chain(fromEventEmitter<{ error?: any; }>(this.extensionActionBar, 'run'))
+		chain(this.extensionActionBar.onDidRun)
 			.map(({ error }) => error)
 			.filter(error => !!error)
 			.on(this.onError, this, this.disposables);
@@ -286,6 +287,11 @@ export class ExtensionEditor extends BaseEditor {
 
 		this.name.textContent = extension.displayName;
 		this.identifier.textContent = extension.id;
+		if (extension.preview) {
+			this.preview.textContent = localize('preview', "Preview");
+		} else {
+			this.preview.textContent = null;
+		}
 
 		this.publisher.textContent = extension.publisherDisplayName;
 		this.description.textContent = extension.description;
@@ -332,6 +338,7 @@ export class ExtensionEditor extends BaseEditor {
 		this.transientDisposables.push(ratings);
 
 		const builtinStatusAction = this.instantiationService.createInstance(BuiltinStatusLabelAction);
+		const maliciousStatusAction = this.instantiationService.createInstance(MaliciousStatusLabelAction, true);
 		const installAction = this.instantiationService.createInstance(CombinedInstallAction);
 		const updateAction = this.instantiationService.createInstance(UpdateAction);
 		const enableAction = this.instantiationService.createInstance(EnableAction);
@@ -340,14 +347,15 @@ export class ExtensionEditor extends BaseEditor {
 
 		installAction.extension = extension;
 		builtinStatusAction.extension = extension;
+		maliciousStatusAction.extension = extension;
 		updateAction.extension = extension;
 		enableAction.extension = extension;
 		disableAction.extension = extension;
 		reloadAction.extension = extension;
 
 		this.extensionActionBar.clear();
-		this.extensionActionBar.push([reloadAction, updateAction, enableAction, disableAction, installAction, builtinStatusAction], { icon: true, label: true });
-		this.transientDisposables.push(enableAction, updateAction, reloadAction, disableAction, installAction, builtinStatusAction);
+		this.extensionActionBar.push([reloadAction, updateAction, enableAction, disableAction, installAction, builtinStatusAction, maliciousStatusAction], { icon: true, label: true });
+		this.transientDisposables.push(enableAction, updateAction, reloadAction, disableAction, installAction, builtinStatusAction, maliciousStatusAction);
 
 		this.navbar.clear();
 		this.navbar.onChange(this.onNavbarChange.bind(this, extension), this, this.transientDisposables);
@@ -369,12 +377,6 @@ export class ExtensionEditor extends BaseEditor {
 	showFind(): void {
 		if (this.activeWebview) {
 			this.activeWebview.showFind();
-		}
-	}
-
-	hideFind(): void {
-		if (this.activeWebview) {
-			this.activeWebview.hideFind();
 		}
 	}
 
@@ -472,6 +474,8 @@ export class ExtensionEditor extends BaseEditor {
 					append(this.content, scrollableContent.getDomNode());
 					this.contentDisposables.push(scrollableContent);
 				}
+			}, () => {
+				append(this.content, $('p.nocontent')).textContent = localize('noContributions', "No Contributions");
 			}));
 	}
 
@@ -509,7 +513,7 @@ export class ExtensionEditor extends BaseEditor {
 	private renderDependencies(container: HTMLElement, extensionDependencies: IExtensionDependencies): Tree {
 		const renderer = this.instantiationService.createInstance(Renderer);
 		const controller = this.instantiationService.createInstance(Controller);
-		const tree = new Tree(container, {
+		const tree = new WorkbenchTree(container, {
 			dataSource: new DataSource(),
 			renderer,
 			controller
@@ -517,19 +521,15 @@ export class ExtensionEditor extends BaseEditor {
 				indentPixels: 40,
 				twistiePixels: 20,
 				keyboardSupport: false
-			});
-
-		this.contentDisposables.push(attachListStyler(tree, this.themeService));
+			}, this.contextKeyService, this.listService, this.themeService);
 
 		tree.setInput(extensionDependencies);
 
-		this.contentDisposables.push(tree.addListener('selection', event => {
+		this.contentDisposables.push(tree.onDidChangeSelection(event => {
 			if (event && event.payload && event.payload.origin === 'keyboard') {
 				controller.openExtension(tree, false);
 			}
 		}));
-
-		this.contentDisposables.push(this.listService.register(tree));
 
 		return tree;
 	}
@@ -931,15 +931,6 @@ const showCommand = new ShowExtensionEditorFindCommand({
 	}
 });
 KeybindingsRegistry.registerCommandAndKeybindingRule(showCommand.toCommandAndKeybindingRule(KeybindingsRegistry.WEIGHT.editorContrib()));
-
-const hideCommand = new ShowExtensionEditorFindCommand({
-	id: 'editor.action.extensioneditor.hidefind',
-	precondition: KEYBINDING_CONTEXT_EXTENSIONEDITOR_WEBVIEW_FOCUS,
-	kbOpts: {
-		primary: KeyMod.CtrlCmd | KeyCode.KEY_F
-	}
-});
-KeybindingsRegistry.registerCommandAndKeybindingRule(hideCommand.toCommandAndKeybindingRule(KeybindingsRegistry.WEIGHT.editorContrib()));
 
 class ShowExtensionEditorFindTermCommand extends Command {
 	constructor(opts: ICommandOptions, private _next: boolean) {

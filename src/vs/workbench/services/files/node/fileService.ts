@@ -11,7 +11,8 @@ import os = require('os');
 import crypto = require('crypto');
 import assert = require('assert');
 
-import { isParent, FileOperation, FileOperationEvent, IContent, IFileService, IResolveFileOptions, IResolveFileResult, IResolveContentOptions, IFileStat, IStreamContent, FileOperationError, FileOperationResult, IUpdateContentOptions, FileChangeType, IImportResult, MAX_FILE_SIZE, FileChangesEvent, ICreateFileOptions, IContentData } from 'vs/platform/files/common/files';
+import { isParent, FileOperation, FileOperationEvent, IContent, IFileService, IResolveFileOptions, IResolveFileResult, IResolveContentOptions, IFileStat, IStreamContent, FileOperationError, FileOperationResult, IUpdateContentOptions, FileChangeType, IImportResult, FileChangesEvent, ICreateFileOptions, IContentData } from 'vs/platform/files/common/files';
+import { MAX_FILE_SIZE } from 'vs/platform/files/node/files';
 import { isEqualOrParent } from 'vs/base/common/paths';
 import { ResourceMap } from 'vs/base/common/map';
 import arrays = require('vs/base/common/arrays');
@@ -38,6 +39,7 @@ import { ITextResourceConfigurationService } from 'vs/editor/common/services/res
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { CancellationToken, CancellationTokenSource } from 'vs/base/common/cancellation';
 import { ILifecycleService, LifecyclePhase } from 'vs/platform/lifecycle/common/lifecycle';
+import { getBaseLabel } from 'vs/base/common/labels';
 
 export interface IEncodingOverride {
 	resource: uri;
@@ -70,12 +72,39 @@ function etag(arg1: any, arg2?: any): string {
 	return `"${crypto.createHash('sha1').update(String(size) + String(mtime)).digest('hex')}"`;
 }
 
+class BufferPool {
+
+	static _64K = new BufferPool(64 * 1024, 5);
+
+	constructor(
+		readonly bufferSize: number,
+		private readonly _capacity: number,
+		private readonly _free: Buffer[] = [],
+	) {
+		//
+	}
+
+	acquire(): Buffer {
+		if (this._free.length === 0) {
+			return Buffer.allocUnsafe(this.bufferSize);
+		} else {
+			return this._free.shift();
+		}
+	}
+
+	release(buf: Buffer): void {
+		if (this._free.length <= this._capacity) {
+			this._free.push(buf);
+		}
+	}
+}
+
 export class FileService implements IFileService {
 
 	public _serviceBrand: any;
 
-	private static FS_EVENT_DELAY = 50; // aggregate and only emit events when changes have stopped for this duration (in ms)
-	private static FS_REWATCH_DELAY = 300; // delay to rewatch a file that was renamed or deleted (in ms)
+	private static readonly FS_EVENT_DELAY = 50; // aggregate and only emit events when changes have stopped for this duration (in ms)
+	private static readonly FS_REWATCH_DELAY = 300; // delay to rewatch a file that was renamed or deleted (in ms)
 
 	private tmpPath: string;
 	private options: IFileServiceOptions;
@@ -324,10 +353,11 @@ export class FileService implements IFileService {
 
 	//#region data stream
 
-	private static chunkSize = 64 * 1024;
-	private static chunkBuffer = Buffer.allocUnsafe(FileService.chunkSize);
 
 	private resolveFileData(resource: uri, options: IResolveContentOptions, token: CancellationToken): Thenable<IContentData> {
+
+		const chunkBuffer = BufferPool._64K.acquire();
+
 		const result: IContentData = {
 			encoding: undefined,
 			stream: undefined,
@@ -371,28 +401,37 @@ export class FileService implements IFileService {
 					if (decoder) {
 						decoder.end();
 					}
+
+					// return the shared buffer
+					BufferPool._64K.release(chunkBuffer);
+
 					if (fd) {
-						fs.close(fd, err => { });
+						fs.close(fd, err => {
+							if (err) {
+								this.options.errorLogger(`resolveFileData#close(): ${err.toString()}`);
+							}
+						});
 					}
 				};
 
 				const handleChunk = (bytesRead) => {
 					if (token.isCancellationRequested) {
-						// cancellation
+						// cancellation -> finish
 						finish(new Error('cancelled'));
-
-					} else if (bytesRead < FileService.chunkSize) {
-						// done, write rest, end
-						decoder.write(FileService.chunkBuffer.slice(0, bytesRead), finish);
-
+					} else if (bytesRead === 0) {
+						// no more data -> finish
+						finish();
+					} else if (bytesRead < chunkBuffer.length) {
+						// write the sub-part of data we received -> repeat
+						decoder.write(chunkBuffer.slice(0, bytesRead), readChunk);
 					} else {
-						// read, write, repeat
-						decoder.write(FileService.chunkBuffer, readChunk);
+						// write all data we received -> repeat
+						decoder.write(chunkBuffer, readChunk);
 					}
 				};
 
 				const readChunk = () => {
-					fs.read(fd, FileService.chunkBuffer, 0, FileService.chunkSize, null, (err, bytesRead) => {
+					fs.read(fd, chunkBuffer, 0, chunkBuffer.length, null, (err, bytesRead) => {
 						totalBytesRead += bytesRead;
 
 						if (totalBytesRead > MAX_FILE_SIZE) {
@@ -412,8 +451,8 @@ export class FileService implements IFileService {
 						} else {
 							// when receiving the first chunk of data we need to create the
 							// decoding stream which is then used to drive the string stream.
-							Promise.resolve(detectMimeAndEncodingFromBuffer(
-								{ buffer: FileService.chunkBuffer, bytesRead },
+							TPromise.as(detectMimeAndEncodingFromBuffer(
+								{ buffer: chunkBuffer, bytesRead },
 								options && options.autoGuessEncoding || this.configuredAutoGuessEncoding(resource)
 							)).then(value => {
 
@@ -431,7 +470,7 @@ export class FileService implements IFileService {
 									handleChunk(bytesRead);
 								}
 
-							}).catch(err => {
+							}).then(undefined, err => {
 								// failed to get encoding
 								finish(err);
 							});
@@ -729,7 +768,7 @@ export class FileService implements IFileService {
 		const absolutePath = this.toAbsolutePath(resource);
 
 		return pfs.stat(absolutePath).then(stat => {
-			return new StatResolver(resource, stat.isDirectory(), stat.mtime.getTime(), stat.size, this.options.verboseLogging);
+			return new StatResolver(resource, stat.isDirectory(), stat.mtime.getTime(), stat.size, this.options.verboseLogging ? this.options.errorLogger : void 0);
 		});
 	}
 
@@ -961,19 +1000,19 @@ export class StatResolver {
 	private name: string;
 	private etag: string;
 	private size: number;
-	private verboseLogging: boolean;
+	private errorLogger: (msg) => void;
 
-	constructor(resource: uri, isDirectory: boolean, mtime: number, size: number, verboseLogging: boolean) {
+	constructor(resource: uri, isDirectory: boolean, mtime: number, size: number, errorLogger?: (msg) => void) {
 		assert.ok(resource && resource.scheme === 'file', 'Invalid resource: ' + resource);
 
 		this.resource = resource;
 		this.isDirectory = isDirectory;
 		this.mtime = mtime;
-		this.name = paths.basename(resource.fsPath);
+		this.name = getBaseLabel(resource);
 		this.etag = etag(size, mtime);
 		this.size = size;
 
-		this.verboseLogging = verboseLogging;
+		this.errorLogger = errorLogger;
 	}
 
 	public resolve(options: IResolveFileOptions): TPromise<IFileStat> {
@@ -1023,8 +1062,8 @@ export class StatResolver {
 	private resolveChildren(absolutePath: string, absoluteTargetPaths: string[], resolveSingleChildDescendants: boolean, callback: (children: IFileStat[]) => void): void {
 		extfs.readdir(absolutePath, (error: Error, files: string[]) => {
 			if (error) {
-				if (this.verboseLogging) {
-					console.error(error);
+				if (this.errorLogger) {
+					this.errorLogger(error);
 				}
 
 				return callback(null); // return - we might not have permissions to read the folder
@@ -1038,8 +1077,8 @@ export class StatResolver {
 
 				flow.sequence(
 					function onError(error: Error): void {
-						if ($this.verboseLogging) {
-							console.error(error);
+						if ($this.errorLogger) {
+							$this.errorLogger(error);
 						}
 
 						clb(null, null); // return - we might not have permissions to read the folder or stat the file

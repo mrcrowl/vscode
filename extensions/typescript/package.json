@@ -1,53 +1,21 @@
 {
-  "_args": [
-    [
-      {
-        "raw": "typescript@2.6.1",
-        "scope": null,
-        "escapedName": "typescript",
-        "name": "typescript",
-        "rawSpec": "2.6.1",
-        "spec": "2.6.1",
-        "type": "version"
-      },
-      "C:\\WF\\Home\\ibis"
-    ]
-  ],
-  "_from": "typescript@2.6.1",
-  "_id": "typescript@2.6.1",
-  "_inCache": true,
-  "_location": "/typescript",
-  "_nodeVersion": "7.2.1",
-  "_npmOperationalInternal": {
-    "host": "s3://npm-registry-packages",
-    "tmp": "tmp/typescript-2.6.1.tgz_1509469018429_0.16281037800945342"
+  "name": "typescript",
+  "description": "Extension to add Typescript capabilities to VSCode.",
+  "displayName": "TypeScript support for VSCode",
+  "version": "19.3.0",
+  "author": "Microsoft Corporation",
+  "license": "MIT",
+  "publisher": "vscode",
+  "aiKey": "AIF-d9b70cd4-b9f9-4d70-929b-a071c400b217",
+  "enableProposedApi": true,
+  "engines": {
+    "vscode": "^0.10.0"
   },
-  "_npmUser": {
-    "name": "typescript",
-    "email": "typescript@microsoft.com"
-  },
-  "_npmVersion": "3.10.10",
-  "_phantomChildren": {},
-  "_requested": {
-    "raw": "typescript@2.6.1",
-    "scope": null,
-    "escapedName": "typescript",
-    "name": "typescript",
-    "rawSpec": "2.6.1",
-    "spec": "2.6.1",
-    "type": "version"
-  },
-  "_requiredBy": [
-    "#DEV:/",
-    "#USER"
-  ],
-  "_resolved": "https://registry.npmjs.org/typescript/-/typescript-2.6.1.tgz",
-  "_shasum": "ef39cdea27abac0b500242d6726ab90e0c846631",
-  "_shrinkwrap": null,
-  "_spec": "typescript@2.6.1",
-  "_where": "C:\\WF\\Home\\ibis",
-  "author": {
-    "name": "Microsoft Corp."
+  "dependencies": {
+    "semver": "4.3.6",
+    "vscode-extension-telemetry": "0.0.8",
+    "vscode-nls": "2.0.1",
+    "typescript": "2.7.1"
   },
   "bin": {
     "tsc": "./bin/tsc",
@@ -116,10 +84,11 @@
     "typescript": "next",
     "xml2js": "^0.4.19"
   },
-  "directories": {},
-  "dist": {
-    "shasum": "ef39cdea27abac0b500242d6726ab90e0c846631",
-    "tarball": "https://registry.npmjs.org/typescript/-/typescript-2.6.1.tgz"
+  "scripts": {
+    "postinstall": "node ./bin/postinstall",
+    "update-grammars": "node ./build/update-grammars.js",
+    "vscode:prepublish": "tsc -p ./",
+    "compile": "tsc -watch -p ./"
   },
   "engines": {
     "node": ">=4.2.0"
@@ -133,34 +102,595 @@
     "language",
     "javascript"
   ],
-  "license": "Apache-2.0",
-  "main": "./lib/typescript.js",
-  "maintainers": [
-    {
-      "name": "typescript",
-      "email": "typescript@microsoft.com"
-    }
-  ],
-  "name": "typescript",
-  "optionalDependencies": {},
-  "readme": "ERROR: No README data found!",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Microsoft/TypeScript.git"
-  },
-  "scripts": {
-    "build": "npm run build:compiler && npm run build:tests",
-    "build:compiler": "jake local",
-    "build:tests": "jake tests",
-    "clean": "jake clean",
-    "gulp": "gulp",
-    "jake": "jake",
-    "lint": "jake lint",
-    "pretest": "jake tests",
-    "setup-hooks": "node scripts/link-hooks.js",
-    "start": "node lib/tsc",
-    "test": "jake runtests-parallel"
-  },
-  "typings": "./lib/typescript.d.ts",
-  "version": "2.6.1"
+  "main": "./out/extension",
+  "contributes": {
+    "languages": [
+      {
+        "id": "typescript",
+        "aliases": [
+          "TypeScript",
+          "ts",
+          "typescript"
+        ],
+        "extensions": [
+          ".ts"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "typescriptreact",
+        "aliases": [
+          "TypeScript React",
+          "tsx"
+        ],
+        "extensions": [
+          ".tsx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "typescript",
+        "scopeName": "source.ts",
+        "path": "./syntaxes/TypeScript.tmLanguage.json"
+      },
+      {
+        "language": "typescriptreact",
+        "scopeName": "source.tsx",
+        "path": "./syntaxes/TypeScriptReact.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.tag.tsx": "jsx-tags",
+          "meta.tag.without-attributes.tsx": "jsx-tags",
+          "meta.tag.attributes.tsx": "typescriptreact",
+          "meta.embedded.expression.tsx": "typescriptreact"
+        }
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "%configuration.typescript%",
+      "order": 20,
+      "properties": {
+        "typescript.tsdk": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "%typescript.tsdk.desc%",
+          "scope": "window"
+        },
+        "typescript.disableAutomaticTypeAcquisition": {
+          "type": "boolean",
+          "default": false,
+          "description": "%typescript.disableAutomaticTypeAcquisition%",
+          "scope": "window"
+        },
+        "typescript.npm": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "%typescript.npm%",
+          "isExecutable": true,
+          "scope": "window"
+        },
+        "typescript.check.npmIsInstalled": {
+          "type": "boolean",
+          "default": true,
+          "description": "%typescript.check.npmIsInstalled%",
+          "scope": "window"
+        },
+        "javascript.referencesCodeLens.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "%javascript.referencesCodeLens.enabled%",
+          "scope": "window"
+        },
+        "typescript.referencesCodeLens.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "%typescript.referencesCodeLens.enabled%",
+          "scope": "window"
+        },
+        "typescript.implementationsCodeLens.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "%typescript.implementationsCodeLens.enabled%",
+          "scope": "window"
+        },
+        "typescript.tsserver.log": {
+          "type": "string",
+          "enum": [
+            "off",
+            "terse",
+            "normal",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "%typescript.tsserver.log%",
+          "scope": "window"
+        },
+        "typescript.tsserver.trace": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "%typescript.tsserver.trace%",
+          "scope": "window"
+        },
+        "typescript.useCodeSnippetsOnMethodSuggest": {
+          "type": "boolean",
+          "default": false,
+          "description": "%typescript.useCodeSnippetsOnMethodSuggest.dec%",
+          "scope": "resource"
+        },
+        "typescript.reportStyleChecksAsWarnings": {
+          "type": "boolean",
+          "default": true,
+          "description": "%typescript.reportStyleChecksAsWarnings%",
+          "scope": "window"
+        },
+        "typescript.validate.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "%typescript.validate.enable%",
+          "scope": "window"
+        },
+        "typescript.format.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "%typescript.format.enable%",
+          "scope": "window"
+        },
+        "typescript.format.insertSpaceAfterCommaDelimiter": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceAfterCommaDelimiter%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceAfterConstructor": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceAfterConstructor%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceAfterSemicolonInForStatements": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceAfterSemicolonInForStatements%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceBeforeAndAfterBinaryOperators": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceBeforeAndAfterBinaryOperators%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceAfterKeywordsInControlFlowStatements": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceAfterKeywordsInControlFlowStatements%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceAfterFunctionKeywordForAnonymousFunctions%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceBeforeFunctionParenthesis": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceBeforeFunctionParenthesis%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces%",
+          "scope": "resource"
+        },
+        "typescript.format.insertSpaceAfterTypeAssertion": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceAfterTypeAssertion%",
+          "scope": "resource"
+        },
+        "typescript.format.placeOpenBraceOnNewLineForFunctions": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.placeOpenBraceOnNewLineForFunctions%",
+          "scope": "resource"
+        },
+        "typescript.format.placeOpenBraceOnNewLineForControlBlocks": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.placeOpenBraceOnNewLineForControlBlocks%",
+          "scope": "resource"
+        },
+        "javascript.validate.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "%javascript.validate.enable%",
+          "scope": "window"
+        },
+        "javascript.format.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "%javascript.format.enable%",
+          "scope": "window"
+        },
+        "javascript.format.insertSpaceAfterCommaDelimiter": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceAfterCommaDelimiter%",
+          "scope": "resource"
+        },
+        "javascript.format.insertSpaceAfterConstructor": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceAfterConstructor%",
+          "scope": "resource"
+        },
+        "javascript.format.insertSpaceAfterSemicolonInForStatements": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceAfterSemicolonInForStatements%",
+          "scope": "resource"
+        },
+        "javascript.format.insertSpaceBeforeAndAfterBinaryOperators": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceBeforeAndAfterBinaryOperators%",
+          "scope": "resource"
+        },
+        "javascript.format.insertSpaceAfterKeywordsInControlFlowStatements": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceAfterKeywordsInControlFlowStatements%",
+          "scope": "resource"
+        },
+        "javascript.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceAfterFunctionKeywordForAnonymousFunctions%",
+          "scope": "resource"
+        },
+        "javascript.format.insertSpaceBeforeFunctionParenthesis": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceBeforeFunctionParenthesis%",
+          "scope": "resource"
+        },
+        "javascript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis%",
+          "scope": "resource"
+        },
+        "javascript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets%",
+          "scope": "resource"
+        },
+        "javascript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces": {
+          "type": "boolean",
+          "default": true,
+          "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces%",
+          "scope": "resource"
+        },
+        "javascript.format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces%",
+          "scope": "resource"
+        },
+        "javascript.format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces%",
+          "scope": "resource"
+        },
+        "javascript.format.placeOpenBraceOnNewLineForFunctions": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.placeOpenBraceOnNewLineForFunctions%",
+          "scope": "resource"
+        },
+        "javascript.format.placeOpenBraceOnNewLineForControlBlocks": {
+          "type": "boolean",
+          "default": false,
+          "description": "%format.placeOpenBraceOnNewLineForControlBlocks%",
+          "scope": "resource"
+        },
+        "jsDocCompletion.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "%jsDocCompletion.enabled%",
+          "scope": "resource"
+        },
+        "javascript.implicitProjectConfig.checkJs": {
+          "type": "boolean",
+          "default": false,
+          "description": "%javascript.implicitProjectConfig.checkJs%",
+          "scope": "window"
+        },
+        "javascript.implicitProjectConfig.experimentalDecorators": {
+          "type": "boolean",
+          "default": false,
+          "description": "%javascript.implicitProjectConfig.experimentalDecorators%",
+          "scope": "window"
+        },
+        "javascript.nameSuggestions": {
+          "type": "boolean",
+          "default": true,
+          "description": "%javascript.nameSuggestions%",
+          "scope": "resource"
+        },
+        "typescript.tsc.autoDetect": {
+          "type": "string",
+          "default": "on",
+          "enum": [
+            "on",
+            "off",
+            "build",
+            "watch"
+          ],
+          "description": "%typescript.tsc.autoDetect%",
+          "scope": "window"
+        },
+        "typescript.quickSuggestionsForPaths": {
+          "type": "boolean",
+          "default": true,
+          "description": "%typescript.quickSuggestionsForPaths%",
+          "scope": "resource"
+        },
+        "typescript.autoImportSuggestions.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "%typescript.autoImportSuggestions.enabled%",
+          "scope": "resource"
+        },
+        "typescript.locale": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "de",
+            "es",
+            "en",
+            "fr",
+            "it",
+            "ja",
+            "ko",
+            "ru",
+            "zh-CN",
+            "zh-TW",
+            null
+          ],
+          "default": null,
+          "description": "%typescript.locale%",
+          "scope": "window"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "typescript.reloadProjects",
+        "title": "%typescript.reloadProjects.title%",
+        "category": "TypeScript"
+      },
+      {
+        "command": "javascript.reloadProjects",
+        "title": "%javascript.reloadProjects.title%",
+        "category": "JavaScript"
+      },
+      {
+        "command": "typescript.selectTypeScriptVersion",
+        "title": "%typescript.selectTypeScriptVersion.title%",
+        "category": "TypeScript"
+      },
+      {
+        "command": "typescript.goToProjectConfig",
+        "title": "%typescript.goToProjectConfig.title%",
+        "category": "TypeScript"
+      },
+      {
+        "command": "javascript.goToProjectConfig",
+        "title": "%javascript.goToProjectConfig.title%",
+        "category": "JavaScript"
+      },
+      {
+        "command": "typescript.openTsServerLog",
+        "title": "%typescript.openTsServerLog.title%",
+        "category": "TypeScript"
+      },
+      {
+        "command": "typescript.restartTsServer",
+        "title": "%typescript.restartTsServer%",
+        "category": "TypeScript"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "typescript.reloadProjects",
+          "when": "editorLangId == typescript && typescript.isManagedFile"
+        },
+        {
+          "command": "typescript.reloadProjects",
+          "when": "editorLangId == typescriptreact && typescript.isManagedFile"
+        },
+        {
+          "command": "javascript.reloadProjects",
+          "when": "editorLangId == javascript && typescript.isManagedFile"
+        },
+        {
+          "command": "javascript.reloadProjects",
+          "when": "editorLangId == javascriptreact && typescript.isManagedFile"
+        },
+        {
+          "command": "typescript.goToProjectConfig",
+          "when": "editorLangId == typescript && typescript.isManagedFile"
+        },
+        {
+          "command": "typescript.goToProjectConfig",
+          "when": "editorLangId == typescriptreact"
+        },
+        {
+          "command": "javascript.goToProjectConfig",
+          "when": "editorLangId == javascript && typescript.isManagedFile"
+        },
+        {
+          "command": "javascript.goToProjectConfig",
+          "when": "editorLangId == javascriptreact && typescript.isManagedFile"
+        },
+        {
+          "command": "typescript.selectTypeScriptVersion",
+          "when": "typescript.isManagedFile"
+        },
+        {
+          "command": "typescript.openTsServerLog",
+          "when": "typescript.isManagedFile"
+        },
+        {
+          "command": "typescript.restartTsServer",
+          "when": "typescript.isManagedFile"
+        }
+      ]
+    },
+    "breakpoints": [
+      {
+        "language": "typescript"
+      },
+      {
+        "language": "typescriptreact"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "typescript",
+        "path": "./snippets/typescript.json"
+      },
+      {
+        "language": "typescriptreact",
+        "path": "./snippets/typescript.json"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": "tsconfig.json",
+        "url": "http://json.schemastore.org/tsconfig"
+      },
+      {
+        "fileMatch": "tsconfig.json",
+        "url": "./schemas/tsconfig.schema.json"
+      },
+      {
+        "fileMatch": "tsconfig.*.json",
+        "url": "http://json.schemastore.org/tsconfig"
+      },
+      {
+        "fileMatch": "tsconfig.*.json",
+        "url": "./schemas/tsconfig.schema.json"
+      },
+      {
+        "fileMatch": "typings.json",
+        "url": "http://json.schemastore.org/typings"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "typescript",
+        "required": [
+          "tsconfig"
+        ],
+        "properties": {
+          "tsconfig": {
+            "type": "string",
+            "description": "The tsconfig file that defines the TS build"
+          },
+          "option": {
+            "type": "string"
+          }
+        }
+      }
+    ],
+    "problemPatterns": [
+      {
+        "name": "tsc",
+        "regexp": "^([^\\s].*)\\((\\d+|\\d+,\\d+|\\d+,\\d+,\\d+,\\d+)\\):\\s+(error|warning|info)\\s+(TS\\d+)\\s*:\\s*(.*)$",
+        "file": 1,
+        "location": 2,
+        "severity": 3,
+        "code": 4,
+        "message": 5
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "tsc",
+        "label": "%typescript.problemMatchers.tsc.label%",
+        "owner": "typescript",
+        "applyTo": "closedDocuments",
+        "fileLocation": [
+          "relative",
+          "${cwd}"
+        ],
+        "pattern": "$tsc"
+      },
+      {
+        "name": "tsc-watch",
+        "label": "%typescript.problemMatchers.tscWatch.label%",
+        "owner": "typescript",
+        "applyTo": "closedDocuments",
+        "fileLocation": [
+          "relative",
+          "${cwd}"
+        ],
+        "pattern": "$tsc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": {
+            "regexp": "^\\s*(?:message TS6032:|\\d{1,2}:\\d{1,2}:\\d{1,2}(?: AM| PM)? -) File change detected\\. Starting incremental compilation\\.\\.\\."
+          },
+          "endsPattern": {
+            "regexp": "^\\s*(?:message TS6042:|\\d{1,2}:\\d{1,2}:\\d{1,2}(?: AM| PM)? -) Compilation complete\\. Watching for file changes\\."
+          }
+        }
+      }
+    ]
+  }
 }

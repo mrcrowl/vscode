@@ -117,11 +117,11 @@ export class UserSettingsRenderer extends Disposable implements IPreferencesRend
 
 		/* __GDPR__
 			"defaultSettingsActions.copySetting" : {
-				"userConfigurationKeys" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
-				"query" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
-				"fuzzy" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
-				"duration" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
-				"index" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
+				"userConfigurationKeys" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
+				"query" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
+				"fuzzy" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
+				"duration" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
+				"index" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
 				"editableSide" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
 			}
 		*/
@@ -174,6 +174,7 @@ export class UserSettingsRenderer extends Disposable implements IPreferencesRend
 		const s = this.getSetting(setting);
 		if (s) {
 			this.settingHighlighter.highlight(s, true);
+			this.editor.setPosition({ lineNumber: s.keyRange.startLineNumber, column: s.keyRange.startColumn });
 		} else {
 			this.settingHighlighter.clear(true);
 		}
@@ -270,14 +271,12 @@ export class DefaultSettingsRenderer extends Disposable implements IPreferencesR
 		this.filteredMatchesRenderer = this._register(instantiationService.createInstance(FilteredMatchesRenderer, editor));
 		this.editSettingActionRenderer = this._register(instantiationService.createInstance(EditSettingRenderer, editor, preferencesModel, this.settingHighlighter));
 		this.feedbackWidgetRenderer = this._register(instantiationService.createInstance(FeedbackWidgetRenderer, editor));
+		const parenthesisHidingRenderer = this._register(instantiationService.createInstance(StaticContentHidingRenderer, editor, preferencesModel));
+		this.hiddenAreasRenderer = this._register(instantiationService.createInstance(HiddenAreasRenderer, editor, [this.settingsGroupTitleRenderer, this.filteredMatchesRenderer, parenthesisHidingRenderer]));
 
 		this._register(this.editSettingActionRenderer.onUpdateSetting(e => this._onUpdatePreference.fire(e)));
-		const parenthesisHidingRenderer = this._register(instantiationService.createInstance(StaticContentHidingRenderer, editor, preferencesModel.settingsGroups));
-
-		const hiddenAreasProviders = [this.settingsGroupTitleRenderer, this.filteredMatchesRenderer, parenthesisHidingRenderer];
-		this.hiddenAreasRenderer = this._register(instantiationService.createInstance(HiddenAreasRenderer, editor, hiddenAreasProviders));
-
 		this._register(this.settingsGroupTitleRenderer.onHiddenAreasChanged(() => this.hiddenAreasRenderer.render()));
+		this._register(preferencesModel.onDidChangeGroups(() => this.render()));
 
 		this.onTriggeredFuzzy = this.settingsHeaderRenderer.onClick;
 	}
@@ -295,7 +294,6 @@ export class DefaultSettingsRenderer extends Disposable implements IPreferencesR
 		this.settingsGroupTitleRenderer.render(this.preferencesModel.settingsGroups);
 		this.editSettingActionRenderer.render(this.preferencesModel.settingsGroups, this._associatedPreferencesModel);
 		this.feedbackWidgetRenderer.render(null);
-		this.hiddenAreasRenderer.render();
 		this.settingHighlighter.clear(true);
 		this.settingsGroupTitleRenderer.showGroup(0);
 		this.hiddenAreasRenderer.render();
@@ -365,10 +363,6 @@ export class DefaultSettingsRenderer extends Disposable implements IPreferencesR
 		this.settingHighlighter.clear(true);
 	}
 
-	public collapseAll() {
-		this.settingsGroupTitleRenderer.collapseAll();
-	}
-
 	public updatePreference(key: string, value: any, source: ISetting): void {
 	}
 }
@@ -379,7 +373,7 @@ export interface HiddenAreasProvider {
 
 export class StaticContentHidingRenderer extends Disposable implements HiddenAreasProvider {
 
-	constructor(private editor: ICodeEditor, private settingsGroups: ISettingsGroup[]
+	constructor(private editor: ICodeEditor, private settingsEditorModel: ISettingsEditorModel
 	) {
 		super();
 	}
@@ -388,7 +382,8 @@ export class StaticContentHidingRenderer extends Disposable implements HiddenAre
 		const model = this.editor.getModel();
 
 		// Hide extra chars for "search results" and "commonly used" groups
-		const lastGroup = tail(this.settingsGroups);
+		const settingsGroups = this.settingsEditorModel.settingsGroups;
+		const lastGroup = tail(settingsGroups);
 		return [
 			{
 				startLineNumber: 1,
@@ -397,10 +392,10 @@ export class StaticContentHidingRenderer extends Disposable implements HiddenAre
 				endColumn: model.getLineMaxColumn(2)
 			},
 			{
-				startLineNumber: this.settingsGroups[0].range.endLineNumber + 1,
-				startColumn: model.getLineMinColumn(this.settingsGroups[0].range.endLineNumber + 1),
-				endLineNumber: this.settingsGroups[0].range.endLineNumber + 4,
-				endColumn: model.getLineMaxColumn(this.settingsGroups[0].range.endLineNumber + 4)
+				startLineNumber: settingsGroups[0].range.endLineNumber + 1,
+				startColumn: model.getLineMinColumn(settingsGroups[0].range.endLineNumber + 1),
+				endLineNumber: settingsGroups[0].range.endLineNumber + 4,
+				endColumn: model.getLineMaxColumn(settingsGroups[0].range.endLineNumber + 4)
 			},
 			{
 				startLineNumber: lastGroup.range.endLineNumber + 1,
@@ -426,8 +421,7 @@ class DefaultSettingsHeaderRenderer extends Disposable {
 
 	constructor(editor: ICodeEditor, scope: ConfigurationScope) {
 		super();
-		const title = scope === ConfigurationScope.RESOURCE ? nls.localize('defaultFolderSettingsTitle', "Default Folder Settings") : nls.localize('defaultSettingsTitle', "Default Settings");
-		this.settingsHeaderWidget = this._register(new DefaultSettingsHeaderWidget(editor, title));
+		this.settingsHeaderWidget = this._register(new DefaultSettingsHeaderWidget(editor, ''));
 		this.onClick = this.settingsHeaderWidget.onClick;
 	}
 
@@ -503,15 +497,6 @@ export class SettingsGroupTitleRenderer extends Disposable implements HiddenArea
 		}
 	}
 
-	public collapseAll() {
-		this.editor.setPosition({ lineNumber: 1, column: 1 });
-		this.hiddenGroups = this.settingsGroups.slice();
-		for (const groupTitleWidget of this.settingsGroupTitleWidgets) {
-			groupTitleWidget.toggleCollapse(true);
-		}
-		this._onHiddenAreasChanged.fire();
-	}
-
 	private onToggled(collapsed: boolean, group: ISettingsGroup) {
 		const index = this.hiddenGroups.indexOf(group);
 		if (collapsed) {
@@ -559,8 +544,8 @@ export class HiddenAreasRenderer extends Disposable {
 }
 
 export class FeedbackWidgetRenderer extends Disposable {
-	private static DEFAULT_COMMENT_TEXT = 'Replace this comment with any text feedback.';
-	private static INSTRUCTION_TEXT = [
+	private static readonly DEFAULT_COMMENT_TEXT = 'Replace this comment with any text feedback.';
+	private static readonly INSTRUCTION_TEXT = [
 		'// Modify the "resultScores" section to contain only your expected results. Assign scores to indicate their relevance.',
 		'// Results present in "resultScores" will be automatically "boosted" for this query, if they are not already at the top of the result set.',
 		'// Add phrase pairs to the "alts" section to have them considered to be synonyms in queries.'
@@ -581,8 +566,9 @@ export class FeedbackWidgetRenderer extends Disposable {
 	}
 
 	public render(result: IFilterResult): void {
+		const workbenchSettings = this.configurationService.getValue<IWorkbenchSettingsConfiguration>().workbench.settings;
 		this._currentResult = result;
-		if (result && result.metadata) {
+		if (result && result.metadata && workbenchSettings.enableNaturalLanguageSearchFeedback) {
 			this.showWidget();
 		} else if (this._feedbackWidget) {
 			this.disposeWidget();
@@ -620,7 +606,7 @@ export class FeedbackWidgetRenderer extends Disposable {
 			JSON.stringify(feedbackQuery, undefined, '    ') + '\n\n' +
 			actualResultNames.map(name => `// ${name}: ${result.metadata.scoredResults[name]}`).join('\n');
 
-		this.editorService.openEditor({ contents, language: 'json' }, /*sideBySide=*/true).then(feedbackEditor => {
+		this.editorService.openEditor({ contents, language: 'jsonc' }, /*sideBySide=*/true).then(feedbackEditor => {
 			const sendFeedbackWidget = this._register(this.instantiationService.createInstance(FloatingClickWidget, feedbackEditor.getControl(), 'Send feedback', null));
 			sendFeedbackWidget.render();
 
@@ -658,7 +644,7 @@ export class FeedbackWidgetRenderer extends Disposable {
 		const altsAdded = expectedQuery.alts && expectedQuery.alts.length;
 		const alts = altsAdded ? expectedQuery.alts : undefined;
 		const workbenchSettings = this.configurationService.getValue<IWorkbenchSettingsConfiguration>().workbench.settings;
-		const autoIngest = workbenchSettings.experimentalFuzzySearchAutoIngestFeedback;
+		const autoIngest = workbenchSettings.naturalLanguageSearchAutoIngestFeedback;
 
 		/* __GDPR__
 			"settingsSearchResultFeedback" : {
@@ -844,7 +830,7 @@ export class HighlightMatchesRenderer extends Disposable {
 		}
 	}
 
-	private static _FIND_MATCH = ModelDecorationOptions.register({
+	private static readonly _FIND_MATCH = ModelDecorationOptions.register({
 		stickiness: editorCommon.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
 		className: 'findMatch'
 	});
@@ -1234,14 +1220,14 @@ class UnsupportedSettingsRenderer extends Disposable {
 		super.dispose();
 	}
 
-	private static _DIM_CONFIGUARATION_ = ModelDecorationOptions.register({
+	private static readonly _DIM_CONFIGUARATION_ = ModelDecorationOptions.register({
 		stickiness: editorCommon.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
 		inlineClassName: 'dim-configuration',
 		beforeContentClassName: 'unsupportedWorkbenhSettingInfo',
 		hoverMessage: new MarkdownString().appendText(nls.localize('unsupportedWorkbenchSetting', "This setting cannot be applied now. It will be applied when you open this folder directly."))
 	});
 
-	private static _DIM_CONFIGUARATION_DEV_MODE = ModelDecorationOptions.register({
+	private static readonly _DIM_CONFIGUARATION_DEV_MODE = ModelDecorationOptions.register({
 		stickiness: editorCommon.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
 		inlineClassName: 'dim-configuration',
 		beforeContentClassName: 'unsupportedWorkbenhSettingInfo',
@@ -1284,7 +1270,7 @@ class WorkspaceConfigurationRenderer extends Disposable {
 		}
 	}
 
-	private static _DIM_CONFIGURATION_ = ModelDecorationOptions.register({
+	private static readonly _DIM_CONFIGURATION_ = ModelDecorationOptions.register({
 		stickiness: editorCommon.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
 		inlineClassName: 'dim-configuration'
 	});

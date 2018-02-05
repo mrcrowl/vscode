@@ -5,11 +5,10 @@
 
 'use strict';
 
-import 'vs/workbench/parts/files/browser/files.contribution'; // load our contribution into the test
+import 'vs/workbench/parts/files/electron-browser/files.contribution'; // load our contribution into the test
 import { FileEditorInput } from 'vs/workbench/parts/files/common/editors/fileEditorInput';
 import { Promise, TPromise } from 'vs/base/common/winjs.base';
 import { TestInstantiationService } from 'vs/platform/instantiation/test/common/instantiationServiceMock';
-import { EventEmitter } from 'vs/base/common/eventEmitter';
 import * as paths from 'vs/base/common/paths';
 import URI from 'vs/base/common/uri';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
@@ -21,7 +20,7 @@ import Severity from 'vs/base/common/severity';
 import { IBackupFileService } from 'vs/workbench/services/backup/common/backup';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { IStorageService, StorageScope } from 'vs/platform/storage/common/storage';
-import { IPartService, Parts } from 'vs/workbench/services/part/common/partService';
+import { IPartService, Parts, Position as PartPosition, Dimension } from 'vs/workbench/services/part/common/partService';
 import { TextModelResolverService } from 'vs/workbench/services/textmodelResolver/common/textModelResolverService';
 import { ITextModelService } from 'vs/editor/common/services/resolverService';
 import { IEditorInput, IEditorOptions, Position, Direction, IEditor, IResourceInput } from 'vs/platform/editor/common/editor';
@@ -169,7 +168,6 @@ export class TestTextFileService extends TextFileService {
 		@ILifecycleService lifecycleService: ILifecycleService,
 		@IWorkspaceContextService contextService: IWorkspaceContextService,
 		@IConfigurationService configurationService: IConfigurationService,
-		@ITelemetryService telemetryService: ITelemetryService,
 		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IUntitledEditorService untitledEditorService: IUntitledEditorService,
@@ -179,7 +177,7 @@ export class TestTextFileService extends TextFileService {
 		@IWindowsService windowsService: IWindowsService,
 		@IHistoryService historyService: IHistoryService
 	) {
-		super(lifecycleService, contextService, configurationService, telemetryService, fileService, untitledEditorService, instantiationService, messageService, TestEnvironmentService, backupFileService, windowsService, historyService);
+		super(lifecycleService, contextService, configurationService, fileService, untitledEditorService, instantiationService, messageService, TestEnvironmentService, backupFileService, windowsService, historyService);
 	}
 
 	public setPromptPath(path: string): void {
@@ -216,7 +214,7 @@ export class TestTextFileService extends TextFileService {
 		});
 	}
 
-	public promptForPath(defaultPath?: string): string {
+	public promptForPath(defaultPath: string): string {
 		return this.promptPath;
 	}
 
@@ -330,11 +328,11 @@ export class TestMessageService implements IMessageService {
 		// No-op
 	}
 
-	public confirmSync(confirmation: IConfirmation): boolean {
+	public confirm(confirmation: IConfirmation): boolean {
 		return false;
 	}
 
-	public confirm(confirmation: IConfirmation): Promise<IConfirmationResult> {
+	public confirmWithCheckbox(confirmation: IConfirmation): Promise<IConfirmationResult> {
 		return TPromise.as({ confirmed: false });
 	}
 }
@@ -344,13 +342,13 @@ export class TestPartService implements IPartService {
 	public _serviceBrand: any;
 
 	private _onTitleBarVisibilityChange = new Emitter<void>();
-	private _onEditorLayout = new Emitter<void>();
+	private _onEditorLayout = new Emitter<Dimension>();
 
 	public get onTitleBarVisibilityChange(): Event<void> {
 		return this._onTitleBarVisibilityChange.event;
 	}
 
-	public get onEditorLayout(): Event<void> {
+	public get onEditorLayout(): Event<Dimension> {
 		return this._onEditorLayout.event;
 	}
 
@@ -416,6 +414,10 @@ export class TestPartService implements IPartService {
 		return 0;
 	}
 
+	public setPanelPosition(position: PartPosition): TPromise<void> {
+		return TPromise.as(null);
+	}
+
 	public addClass(clazz: string): void { }
 	public removeClass(clazz: string): void { }
 	public getWorkbenchElementId(): string { return ''; }
@@ -425,14 +427,12 @@ export class TestPartService implements IPartService {
 	public resizePart(part: Parts, sizeChange: number): void { }
 }
 
-export class TestStorageService extends EventEmitter implements IStorageService {
+export class TestStorageService implements IStorageService {
 	public _serviceBrand: any;
 
 	private storage: StorageService;
 
 	constructor() {
-		super();
-
 		let context = new TestContextService();
 		this.storage = new StorageService(new InMemoryLocalStorage(), null, context.getWorkspace().id);
 	}
@@ -559,11 +559,6 @@ export class TestEditorGroupService implements IEditorGroupService {
 	public pinEditor(arg1: any, input: IEditorInput): void {
 	}
 
-	public unpinEditor(group: IEditorGroup, input: IEditorInput): void;
-	public unpinEditor(position: Position, input: IEditorInput): void;
-	public unpinEditor(arg1: any, input: IEditorInput): void {
-	}
-
 	public moveEditor(input: IEditorInput, from: IEditorGroup, to: IEditorGroup, moveOptions?: IMoveOptions): void;
 	public moveEditor(input: IEditorInput, from: Position, to: Position, moveOptions?: IMoveOptions): void;
 	public moveEditor(input: IEditorInput, from: any, to: any, moveOptions?: IMoveOptions): void {
@@ -611,10 +606,6 @@ export class TestEditorService implements IWorkbenchEditorService {
 
 	public closeAllEditors(except?: Position): TPromise<void> {
 		return TPromise.as(null);
-	}
-
-	public isVisible(input: IEditorInput, includeDiff: boolean): boolean {
-		return false;
 	}
 
 	public getActiveEditor(): IEditor {
@@ -962,18 +953,6 @@ export class TestWindowService implements IWindowService {
 		return TPromise.as(void 0);
 	}
 
-	isMaximized(): TPromise<boolean> {
-		return TPromise.as(void 0);
-	}
-
-	maximizeWindow(): TPromise<void> {
-		return TPromise.as(void 0);
-	}
-
-	unmaximizeWindow(): TPromise<void> {
-		return TPromise.as(void 0);
-	}
-
 	onWindowTitleDoubleClick(): TPromise<void> {
 		return TPromise.as(void 0);
 	}
@@ -982,19 +961,19 @@ export class TestWindowService implements IWindowService {
 		return TPromise.as(void 0);
 	}
 
-	showMessageBoxSync(options: Electron.MessageBoxOptions): number {
+	showMessageBox(options: Electron.MessageBoxOptions): number {
 		return 0;
 	}
 
-	showMessageBox(options: Electron.MessageBoxOptions): Promise<IMessageBoxResult> {
+	showMessageBoxWithCheckbox(options: Electron.MessageBoxOptions): Promise<IMessageBoxResult> {
 		return TPromise.as(void 0);
 	}
 
-	showSaveDialog(options: Electron.SaveDialogOptions, callback?: (fileName: string) => void): string {
+	showSaveDialog(options: Electron.SaveDialogOptions): string {
 		return void 0;
 	}
 
-	showOpenDialog(options: Electron.OpenDialogOptions, callback?: (fileNames: string[]) => void): string[] {
+	showOpenDialog(options: Electron.OpenDialogOptions): string[] {
 		return void 0;
 	}
 
